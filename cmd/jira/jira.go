@@ -125,7 +125,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (data *models
 // items is a current pack of input items
 // docs is a pointer to where extracted identities will be stored
 func (j *DSJira) JiraEnrichItems(ctx *shared.Ctx, thrN int, items []interface{}, docs *[]interface{}, final bool) (err error) {
-  // FIXME
+	// FIXME
 	shared.Printf("input processing(%d/%d/%v)\n", len(items), len(*docs), final)
 	outputDocs := func() {
 		if len(*docs) > 0 {
@@ -172,7 +172,7 @@ func (j *DSJira) Sync(ctx *shared.Ctx) (err error) {
 		shared.Printf("%s fetching till %v (%d threads)\n", j.Endpoint(), ctx.DateTo, thrN)
 	}
 	// NOTE: Non-generic starts here
-  // FIXME
+	// FIXME
 	// NOTE: Non-generic ends here
 	gMaxUpstreamDtMtx.Lock()
 	defer gMaxUpstreamDtMtx.Unlock()
