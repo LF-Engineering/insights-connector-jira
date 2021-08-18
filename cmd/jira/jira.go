@@ -195,6 +195,42 @@ func (j *DSJira) Init(ctx *shared.Ctx) (err error) {
 	return
 }
 
+// GetRoleIdentity - return identity data for a given role
+func (j *DSJira) GetRoleIdentity(ctx *shared.Ctx, item map[string]interface{}, role string) (identity map[string]interface{}) {
+	ident := make(map[string]interface{})
+	user, ok := shared.Dig(item, []string{role}, false, true)
+	/*
+		defer func() {
+			fmt.Printf("GetRoleIdentity(%s): %v: %+v\n", role, ok, identity)
+		}()
+	*/
+	if !ok {
+		return
+	}
+	data := [][2]string{
+		{"name", "displayName"},
+		{"username", "name"},
+		{"email", "emailAddress"},
+		{"tz", "timeZone"},
+	}
+	any := false
+	for _, row := range data {
+		iV, ok := shared.Dig(user, []string{row[1]}, false, true)
+		if !any && ok {
+			v, _ := iV.(string)
+			if v != "" {
+				any = true
+			}
+		}
+		ident[row[0]] = iV
+	}
+	if any {
+		ident["type"] = role
+		identity = ident
+	}
+	return
+}
+
 // EnrichComments - return rich item from raw item for a given author type
 func (j *DSJira) EnrichComments(ctx *shared.Ctx, comments []interface{}, item map[string]interface{}) (richComments []interface{}, err error) {
 	for _, comment := range comments {
@@ -230,7 +266,7 @@ func (j *DSJira) EnrichComments(ctx *shared.Ctx, comments []interface{}, item ma
 			}
 		}
 		var dt time.Time
-		var created interface{}
+		dtMap := map[string]time.Time{}
 		for _, field := range []string{"created", "updated"} {
 			idt, _ := shared.Dig(comment, []string{field}, true, false)
 			dt, err = shared.TimeParseInterfaceString(idt)
@@ -240,7 +276,9 @@ func (j *DSJira) EnrichComments(ctx *shared.Ctx, comments []interface{}, item ma
 				richComment[field] = dt
 			}
 			if field == "created" {
-				created = idt
+				dtMap["author"] = dt
+			} else {
+				dtMap["updateAuthor"] = dt
 			}
 		}
 		cid, _ := shared.Dig(comment, []string{"id"}, true, false)
@@ -258,21 +296,18 @@ func (j *DSJira) EnrichComments(ctx *shared.Ctx, comments []interface{}, item ma
 		}
 		richComment["id"] = fmt.Sprintf("%s_comment_%s", iid, comid)
 		richComment["type"] = "comment"
-		// FIXME
-		fmt.Printf("comment created at %+v\n", created)
-		/*
-			if affs {
-				var affsItems map[string]interface{}
-				itemComment := map[string]interface{}{"data": map[string]interface{}{"fields": comment}}
-				affsItems, err = ds.AffsItems(ctx, itemComment, []string{Author, "updateAuthor"}, created)
-				if err != nil {
-					return
-				}
-				for prop, value := range affsItems {
-					richComment[prop] = value
-				}
+		roleIdents := []map[string]interface{}{}
+		for _, role := range []string{"author", "updateAuthor"} {
+			iComment, _ := comment.(map[string]interface{})
+			identity := j.GetRoleIdentity(ctx, iComment, role)
+			if identity != nil {
+				dt, _ := dtMap[role]
+				identity["dt"] = dt
+				roleIdents = append(roleIdents, identity)
 			}
-		*/
+		}
+		richComment["roles"] = roleIdents
+		// fmt.Printf("comment roles: roleIdents: %+v\n", roleIdents)
 		// NOTE: From shared
 		richComment["metadata__enriched_on"] = time.Now()
 		// richComment[ProjectSlug] = ctx.ProjectSlug
@@ -308,19 +343,44 @@ func (j *DSJira) EnrichItem(ctx *shared.Ctx, item map[string]interface{}, roles 
 		err = fmt.Errorf("missing fields field in issue %+v", shared.DumpKeys(issue))
 		return
 	}
-	roleNames := []string{}
-	roleData := []map[string]interface{}{}
-	for _, role := range roles {
-		v, ok := fields[role].(map[string]interface{})
-		if !ok || v == nil {
-			continue
-		}
-		roleNames = append(roleNames, role)
-		// name, displayName, timeZone
-		roleData = append(roleData, v)
-	}
 	created, _ := shared.Dig(fields, []string{"created"}, true, false)
-	rich["creation_date"] = created
+	updated, _ := shared.Dig(fields, []string{"updated"}, false, true)
+	var (
+		sCreated  string
+		createdDt time.Time
+		sUpdated  string
+		updatedDt time.Time
+		e         error
+		o         bool
+	)
+	sCreated, o = created.(string)
+	if o {
+		createdDt, e = shared.TimeParseES(sCreated)
+		if e != nil {
+			o = false
+		}
+	}
+	if o {
+		sUpdated, o = updated.(string)
+	}
+	if o {
+		updatedDt, e = shared.TimeParseES(sUpdated)
+		if e != nil {
+			o = false
+		}
+	}
+	rich["creation_date"] = createdDt
+	rich["updated"] = updatedDt
+	roleIdents := []map[string]interface{}{}
+	for _, role := range roles {
+		identity := j.GetRoleIdentity(ctx, fields, role)
+		if identity != nil {
+			identity["dt"] = createdDt
+			roleIdents = append(roleIdents, identity)
+		}
+	}
+	rich["roles"] = roleIdents
+	// fmt.Printf("issue created at %+v, roles: roleIdents: %+v\n", createdDt, roleIdents)
 	desc, ok := fields["description"].(string)
 	if ok {
 		rich["main_description_analyzed"] = desc
@@ -419,48 +479,12 @@ func (j *DSJira) EnrichItem(ctx *shared.Ctx, item map[string]interface{}, roles 
 	if ok {
 		rich["number_of_comments"] = len(comments)
 	}
-	updated, _ := shared.Dig(fields, []string{"updated"}, false, true)
-	rich["updated"] = updated
 	origin, ok := rich["origin"].(string)
 	if !ok {
 		err = fmt.Errorf("cannot read origin as string from rich %+v", rich)
 		return
 	}
 	rich["url"] = origin + "/browse/" + key
-	var (
-		sCreated  string
-		createdDt time.Time
-		sUpdated  string
-		updatedDt time.Time
-		e         error
-		o         bool
-	)
-	sCreated, o = created.(string)
-	if o {
-		createdDt, e = shared.TimeParseES(sCreated)
-		if e != nil {
-			o = false
-		}
-	}
-	if o {
-		sUpdated, o = updated.(string)
-	}
-	if o {
-		updatedDt, e = shared.TimeParseES(sUpdated)
-		if e != nil {
-			o = false
-		}
-	}
-	if o {
-		now := time.Now()
-		days := float64(updatedDt.Sub(createdDt).Seconds()) / 86400.0
-		rich["time_to_close_days"] = days
-		days = float64(now.Sub(createdDt).Seconds()) / 86400.0
-		rich["time_to_last_update_days"] = days
-	} else {
-		rich["time_to_close_days"] = nil
-		rich["time_to_last_update_days"] = nil
-	}
 	fixVersions, ok := shared.Dig(fields, []string{"fixVersions"}, false, true)
 	if ok {
 		rels := []interface{}{}
@@ -511,28 +535,6 @@ func (j *DSJira) EnrichItem(ctx *shared.Ctx, item map[string]interface{}, roles 
 			rich["sprint_complete"] = strings.Split(shared.PartitionString(s, ",completeDate=")[2], ",")[0]
 		}
 	}
-	// If affiliations DB enabled
-	// FIXME
-	/*
-		if affs {
-			var affsItems map[string]interface{}
-			affsItems, err = j.AffsItems(ctx, item, []string{"assignee", "reporter", "creator"}, created)
-			if err != nil {
-				return
-			}
-			for prop, value := range affsItems {
-				rich[prop] = value
-			}
-			for _, suff := range AffsFields {
-				rich[Author+suff] = rich[author+suff]
-			}
-			orgsKey := author + MultiOrgNames
-			_, ok := Dig(rich, []string{orgsKey}, false, true)
-			if !ok {
-				rich[orgsKey] = []interface{}{}
-			}
-		}
-	*/
 	rich["type"] = "issue"
 	// NOTE: From shared
 	rich["metadata__enriched_on"] = time.Now()
