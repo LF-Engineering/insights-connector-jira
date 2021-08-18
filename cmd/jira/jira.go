@@ -556,9 +556,30 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (data *models
 		doc, _ := iDoc.(map[string]interface{})
 		// Event
 		// FIXME
-		fmt.Printf("%s: %d\n", source, len(doc))
+		docUUID, _ := doc["uuid"].(string)
+		issueID, _ := doc["id"].(string)
 		var updatedOn time.Time
-		event := &models.Event{}
+		event := &models.Event{
+			Issue: &models.Issue{
+				ID:           docUUID,
+				DataSourceID: source,
+				IssueID:      issueID,
+				/*
+					Activities []*IssueActivity `json:"Activities"`
+					CreatedAt strfmt.DateTime `json:"CreatedAt,omitempty"`
+					CreatedTz string `json:"CreatedTz,omitempty"`
+					IsClosed bool `json:"IsClosed,omitempty"`
+					JiraProject *JiraProject `json:"JiraProject,omitempty"`
+					Labels []string `json:"Labels"`
+					Releases []string `json:"Releases"`
+					Title string `json:"Title,omitempty"`
+					URL string `json:"URL,omitempty"`
+					UpdatedAt strfmt.DateTime `json:"UpdatedAt,omitempty"`
+					UpdatedTz string `json:"UpdatedTz,omitempty"`
+					Watchers int64 `json:"Watchers,omitempty"`
+				*/
+			},
+		}
 		data.Events = append(data.Events, event)
 		gMaxUpstreamDtMtx.Lock()
 		if updatedOn.After(gMaxUpstreamDt) {
