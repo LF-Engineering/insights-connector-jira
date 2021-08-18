@@ -58,7 +58,11 @@ definitions:
   Channel:
     type: object
     properties:
-      InternalId:
+      Id:
+        type: string
+        example: 1234567890abcdef
+        description: PK - up to 50 chars
+      ChannelId:
         type: string
         example: 1234567890abcdef
         description: RocketChat internal chat channel ID
@@ -114,20 +118,6 @@ definitions:
         type: string
         example: 1234567890abcdef
         description: FK - up to 50 chars
-      MessageInternalId:
-        type: string
-        example: 107625428
-        description: RocketChat message internal id - can be any string
-      ParentId:
-        type: string
-        x-nullable: true
-        example: 1234567890abcdef
-        description: parent message FK - up to 50 chars
-      ParentInternalId:
-        type: string
-        x-nullable: true
-        example: 107625428
-        description: RocketChat parent message internal id - can be any string
       CreatedAt:
         type: string
         format: date-time
@@ -156,10 +146,6 @@ definitions:
         type: string
         example: 1234567890abcdef
         description: PK - up to 50 chars
-      InternalId:
-        type: string
-        example: 107625428
-        description: RocketChat internal id - can be any string
       CreatedAt:
         type: string
         format: date-time
