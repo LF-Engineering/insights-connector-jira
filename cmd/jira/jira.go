@@ -13,6 +13,7 @@ import (
 
 	"github.com/LF-Engineering/insights-datasource-jira/gen/models"
 	shared "github.com/LF-Engineering/insights-datasource-shared"
+	"github.com/go-openapi/strfmt"
 	jsoniter "github.com/json-iterator/go"
 	// jsoniter "github.com/json-iterator/go"
 )
@@ -232,7 +233,7 @@ func (j *DSJira) GetRoleIdentity(ctx *shared.Ctx, item map[string]interface{}, r
 }
 
 // EnrichComments - return rich item from raw item for a given author type
-func (j *DSJira) EnrichComments(ctx *shared.Ctx, comments []interface{}, item map[string]interface{}) (richComments []interface{}, err error) {
+func (j *DSJira) EnrichComments(ctx *shared.Ctx, comments []interface{}, item map[string]interface{}) (richComments []map[string]interface{}, err error) {
 	for _, comment := range comments {
 		richComment := make(map[string]interface{})
 		for _, field := range shared.RawFields {
@@ -555,30 +556,80 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (data *models
 	for _, iDoc := range docs {
 		doc, _ := iDoc.(map[string]interface{})
 		// Event
-		// FIXME
 		docUUID, _ := doc["uuid"].(string)
 		issueID, _ := doc["id"].(string)
-		var updatedOn time.Time
+		createdOn, _ := doc["creation_date"].(time.Time)
+		updatedOn, okUpdatedOn := doc["updated"].(time.Time)
+		createdTz, updatedTz := "", ""
+		roles, okRoles := doc["roles"].([]map[string]interface{})
+		if okRoles {
+			for _, roleData := range roles {
+				role, _ := roleData["type"].(string)
+				tz, _ := roleData["tz"].(string)
+				if role == "creator" && tz != "" {
+					createdTz = tz
+				}
+				if role == "reporter" && createdTz == "" && tz != "" {
+					createdTz = tz
+				}
+				if role == "assignee" && createdTz == "" && tz != "" {
+					createdTz = tz
+				}
+			}
+		}
+		if createdTz == "" {
+			createdTz = "UTC"
+		}
+		comments, okComments := doc["issue_comments"].([]map[string]interface{})
+		if okComments {
+			for _, comment := range comments {
+				commentRoles, okCommentRoles := comment["roles"].([]map[string]interface{})
+				if okCommentRoles {
+					for _, roleData := range commentRoles {
+						tz, okTz := roleData["tz"].(string)
+						dt, okDt := roleData["dt"].(time.Time)
+						if okTz && okDt {
+							if !okUpdatedOn {
+								updatedOn = dt
+								updatedTz = tz
+								okUpdatedOn = true
+							} else {
+								if updatedTz == "" {
+									updatedTz = tz
+								}
+								if dt.After(updatedOn) {
+									updatedOn = dt
+									updatedTz = tz
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 		event := &models.Event{
 			Issue: &models.Issue{
 				ID:           docUUID,
 				DataSourceID: source,
 				IssueID:      issueID,
+				CreatedAt:    strfmt.DateTime(createdOn),
+				CreatedTz:    createdTz,
+				UpdatedAt:    strfmt.DateTime(updatedOn),
+				UpdatedTz:    updatedTz,
 				/*
 					Activities []*IssueActivity `json:"Activities"`
-					CreatedAt strfmt.DateTime `json:"CreatedAt,omitempty"`
-					CreatedTz string `json:"CreatedTz,omitempty"`
 					IsClosed bool `json:"IsClosed,omitempty"`
 					JiraProject *JiraProject `json:"JiraProject,omitempty"`
 					Labels []string `json:"Labels"`
 					Releases []string `json:"Releases"`
 					Title string `json:"Title,omitempty"`
 					URL string `json:"URL,omitempty"`
-					UpdatedAt strfmt.DateTime `json:"UpdatedAt,omitempty"`
-					UpdatedTz string `json:"UpdatedTz,omitempty"`
 					Watchers int64 `json:"Watchers,omitempty"`
 				*/
 			},
+		}
+		if !okUpdatedOn {
+			updatedOn = createdOn
 		}
 		data.Events = append(data.Events, event)
 		gMaxUpstreamDtMtx.Lock()
@@ -707,7 +758,7 @@ func (j *DSJira) JiraEnrichItems(ctx *shared.Ctx, thrN int, items []interface{},
 		if len(comments) == 0 {
 			return
 		}
-		var richComments []interface{}
+		var richComments []map[string]interface{}
 		richComments, e = j.EnrichComments(ctx, comments, rich)
 		if e != nil {
 			return
