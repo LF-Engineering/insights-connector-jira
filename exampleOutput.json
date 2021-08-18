@@ -13,9 +13,15 @@
         "DataSourceId": "jira",
         "Id": "46ab9541fcbe2a73aa843f8f7e8651ac47f3dd8c",
         "IssueId": "10201",
+        "JiraProject": {
+          "Id": "10200",
+          "Key": "XGVELA",
+          "Name": "XGVela"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-03-17T02:54:00.000Z"
+        "UpdatedAt": "2021-03-17T02:54:00.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -26,9 +32,15 @@
         "DataSourceId": "jira",
         "Id": "0ecbf8965dd13df5725ef4e2094ca9f4f1e85048",
         "IssueId": "10209",
+        "JiraProject": {
+          "Id": "10200",
+          "Key": "XGVELA",
+          "Name": "XGVela"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-03-18T08:27:16.000Z"
+        "UpdatedAt": "2021-03-18T08:27:16.000Z",
+        "Watchers": 2
       }
     },
     {
@@ -39,51 +51,15 @@
         "DataSourceId": "jira",
         "Id": "28e32b09599a4471168c4943aff57574ff8d309a",
         "IssueId": "10202",
+        "JiraProject": {
+          "Id": "10200",
+          "Key": "XGVELA",
+          "Name": "XGVela"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-03-18T08:31:57.000Z"
-      }
-    },
-    {
-      "Issue": {
-        "Activities": null,
-        "CreatedAt": "2021-03-18T06:43:23.000Z",
-        "CreatedTz": "Asia/Shanghai",
-        "DataSourceId": "jira",
-        "Id": "44f4f591bc25750febaa3256e22423555d067a93",
-        "IssueId": "10204",
-        "Labels": null,
-        "Releases": null,
-        "UpdatedAt": "2021-03-25T09:39:26.000Z",
-        "UpdatedTz": "UTC"
-      }
-    },
-    {
-      "Issue": {
-        "Activities": null,
-        "CreatedAt": "2021-03-18T07:14:45.000Z",
-        "CreatedTz": "Asia/Shanghai",
-        "DataSourceId": "jira",
-        "Id": "1a7a35c3ef4b0488111a6fd2306218559f882df4",
-        "IssueId": "10207",
-        "Labels": null,
-        "Releases": null,
-        "UpdatedAt": "2021-03-30T13:54:08.000Z",
-        "UpdatedTz": "UTC"
-      }
-    },
-    {
-      "Issue": {
-        "Activities": null,
-        "CreatedAt": "2021-03-18T08:31:57.000Z",
-        "CreatedTz": "Asia/Shanghai",
-        "DataSourceId": "jira",
-        "Id": "f05f585ed08bff6ae09ba06322bacb48d02f522e",
-        "IssueId": "10210",
-        "Labels": null,
-        "Releases": null,
-        "UpdatedAt": "2021-04-06T13:51:09.000Z",
-        "UpdatedTz": "Asia/Shanghai"
+        "UpdatedAt": "2021-03-18T08:31:57.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -94,24 +70,76 @@
         "DataSourceId": "jira",
         "Id": "7731f8a3afba5798ed06aceeb812e440e8399de0",
         "IssueId": "10208",
+        "JiraProject": {
+          "Id": "10200",
+          "Key": "XGVELA",
+          "Name": "XGVela"
+        },
         "Labels": null,
         "Releases": null,
         "UpdatedAt": "2021-04-06T13:33:56.000Z",
-        "UpdatedTz": "UTC"
+        "UpdatedTz": "UTC",
+        "Watchers": 2
       }
     },
     {
       "Issue": {
         "Activities": null,
-        "CreatedAt": "2021-03-18T06:57:48.000Z",
+        "CreatedAt": "2021-03-18T06:43:23.000Z",
         "CreatedTz": "Asia/Shanghai",
         "DataSourceId": "jira",
-        "Id": "82529e2033a911edfd4f8dd18fec684abc570242",
-        "IssueId": "10205",
+        "Id": "44f4f591bc25750febaa3256e22423555d067a93",
+        "IssueId": "10204",
+        "JiraProject": {
+          "Id": "10200",
+          "Key": "XGVELA",
+          "Name": "XGVela"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-04-22T15:16:35.000Z",
-        "UpdatedTz": "UTC"
+        "UpdatedAt": "2021-03-25T09:39:26.000Z",
+        "UpdatedTz": "UTC",
+        "Watchers": 2
+      }
+    },
+    {
+      "Issue": {
+        "Activities": null,
+        "CreatedAt": "2021-03-18T07:14:45.000Z",
+        "CreatedTz": "Asia/Shanghai",
+        "DataSourceId": "jira",
+        "Id": "1a7a35c3ef4b0488111a6fd2306218559f882df4",
+        "IssueId": "10207",
+        "JiraProject": {
+          "Id": "10200",
+          "Key": "XGVELA",
+          "Name": "XGVela"
+        },
+        "Labels": null,
+        "Releases": null,
+        "UpdatedAt": "2021-03-30T13:54:08.000Z",
+        "UpdatedTz": "UTC",
+        "Watchers": 2
+      }
+    },
+    {
+      "Issue": {
+        "Activities": null,
+        "CreatedAt": "2021-03-18T08:31:57.000Z",
+        "CreatedTz": "Asia/Shanghai",
+        "DataSourceId": "jira",
+        "Id": "f05f585ed08bff6ae09ba06322bacb48d02f522e",
+        "IssueId": "10210",
+        "JiraProject": {
+          "Id": "10200",
+          "Key": "XGVELA",
+          "Name": "XGVela"
+        },
+        "Labels": null,
+        "Releases": null,
+        "UpdatedAt": "2021-04-06T13:51:09.000Z",
+        "UpdatedTz": "Asia/Shanghai",
+        "Watchers": 2
       }
     },
     {
@@ -122,10 +150,36 @@
         "DataSourceId": "jira",
         "Id": "131bb98c3651aa12c14eebce9fc39b81de8450ff",
         "IssueId": "10203",
+        "JiraProject": {
+          "Id": "10200",
+          "Key": "XGVELA",
+          "Name": "XGVela"
+        },
         "Labels": null,
         "Releases": null,
         "UpdatedAt": "2021-04-22T15:12:47.000Z",
-        "UpdatedTz": "UTC"
+        "UpdatedTz": "UTC",
+        "Watchers": 3
+      }
+    },
+    {
+      "Issue": {
+        "Activities": null,
+        "CreatedAt": "2021-03-18T06:57:48.000Z",
+        "CreatedTz": "Asia/Shanghai",
+        "DataSourceId": "jira",
+        "Id": "82529e2033a911edfd4f8dd18fec684abc570242",
+        "IssueId": "10205",
+        "JiraProject": {
+          "Id": "10200",
+          "Key": "XGVELA",
+          "Name": "XGVela"
+        },
+        "Labels": null,
+        "Releases": null,
+        "UpdatedAt": "2021-04-22T15:16:35.000Z",
+        "UpdatedTz": "UTC",
+        "Watchers": 3
       }
     },
     {
@@ -136,23 +190,15 @@
         "DataSourceId": "jira",
         "Id": "838fb853055cb8738cc7c6c50e7f284dad599604",
         "IssueId": "10305",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-06-30T05:41:22.000Z"
-      }
-    },
-    {
-      "Issue": {
-        "Activities": null,
-        "CreatedAt": "2021-03-18T07:11:05.000Z",
-        "CreatedTz": "Asia/Shanghai",
-        "DataSourceId": "jira",
-        "Id": "553d64c33cbd7c7aa2e8014b9081b59cd0027452",
-        "IssueId": "10206",
-        "Labels": null,
-        "Releases": null,
-        "UpdatedAt": "2021-04-24T13:50:06.000Z",
-        "UpdatedTz": "UTC"
+        "UpdatedAt": "2021-06-30T05:41:22.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -163,9 +209,35 @@
         "DataSourceId": "jira",
         "Id": "98511648d4d363a5f3a0bc72817f5af7fe480695",
         "IssueId": "10306",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-07-01T07:54:14.000Z"
+        "UpdatedAt": "2021-07-01T07:54:14.000Z",
+        "Watchers": 1
+      }
+    },
+    {
+      "Issue": {
+        "Activities": null,
+        "CreatedAt": "2021-03-18T07:11:05.000Z",
+        "CreatedTz": "Asia/Shanghai",
+        "DataSourceId": "jira",
+        "Id": "553d64c33cbd7c7aa2e8014b9081b59cd0027452",
+        "IssueId": "10206",
+        "JiraProject": {
+          "Id": "10200",
+          "Key": "XGVELA",
+          "Name": "XGVela"
+        },
+        "Labels": null,
+        "Releases": null,
+        "UpdatedAt": "2021-04-24T13:50:06.000Z",
+        "UpdatedTz": "UTC",
+        "Watchers": 4
       }
     },
     {
@@ -176,9 +248,15 @@
         "DataSourceId": "jira",
         "Id": "5ac3c1b3978185da4633d0ade8bcd65117756a48",
         "IssueId": "10314",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-07-02T09:20:59.000Z"
+        "UpdatedAt": "2021-07-02T09:20:59.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -189,9 +267,15 @@
         "DataSourceId": "jira",
         "Id": "e8414b20994789569986d19a0fabde033123c83f",
         "IssueId": "10311",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-07-02T09:21:26.000Z"
+        "UpdatedAt": "2021-07-02T09:21:26.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -202,9 +286,15 @@
         "DataSourceId": "jira",
         "Id": "6a80111ea7268ff6159e5c33f74f53c196d93ca2",
         "IssueId": "10310",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-07-02T09:22:07.000Z"
+        "UpdatedAt": "2021-07-02T09:22:07.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -215,9 +305,15 @@
         "DataSourceId": "jira",
         "Id": "5115f3134c07b5df6cef19b793c979bc42072bdc",
         "IssueId": "10309",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-07-02T09:22:19.000Z"
+        "UpdatedAt": "2021-07-02T09:22:19.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -228,9 +324,15 @@
         "DataSourceId": "jira",
         "Id": "a0854b537eb1c76a95e9b51a6b2567d430c40622",
         "IssueId": "10315",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-07-02T11:20:42.000Z"
+        "UpdatedAt": "2021-07-02T11:20:42.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -241,22 +343,15 @@
         "DataSourceId": "jira",
         "Id": "d90bc7a2efd9bd6811afd9dccc9bef57577e4bb7",
         "IssueId": "10317",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-07-05T04:17:08.000Z"
-      }
-    },
-    {
-      "Issue": {
-        "Activities": null,
-        "CreatedAt": "2021-07-02T11:39:56.000Z",
-        "CreatedTz": "Asia/Kolkata",
-        "DataSourceId": "jira",
-        "Id": "69e5fa554e7008d1a43a0fc5f6a3f562476a9671",
-        "IssueId": "10316",
-        "Labels": null,
-        "Releases": null,
-        "UpdatedAt": "2021-07-18T04:22:29.000Z"
+        "UpdatedAt": "2021-07-05T04:17:08.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -266,11 +361,38 @@
         "CreatedTz": "Asia/Kolkata",
         "DataSourceId": "jira",
         "Id": "9b194e0666f2f0e4a365694f3415450e5297faab",
+        "IsClosed": true,
         "IssueId": "10312",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
         "UpdatedAt": "2021-07-08T09:26:23.000Z",
-        "UpdatedTz": "Asia/Kolkata"
+        "UpdatedTz": "Asia/Kolkata",
+        "Watchers": 1
+      }
+    },
+    {
+      "Issue": {
+        "Activities": null,
+        "CreatedAt": "2021-07-02T11:39:56.000Z",
+        "CreatedTz": "Asia/Kolkata",
+        "DataSourceId": "jira",
+        "Id": "69e5fa554e7008d1a43a0fc5f6a3f562476a9671",
+        "IsClosed": true,
+        "IssueId": "10316",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
+        "Labels": null,
+        "Releases": null,
+        "UpdatedAt": "2021-07-18T04:22:29.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -281,9 +403,15 @@
         "DataSourceId": "jira",
         "Id": "74c77e45c032a814d2571ac9d4a8c1381c214642",
         "IssueId": "10319",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-07-18T04:22:53.000Z"
+        "UpdatedAt": "2021-07-18T04:22:53.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -294,10 +422,16 @@
         "DataSourceId": "jira",
         "Id": "0f5924ce409449529ed7dca9f5d6a4415bc8cd22",
         "IssueId": "10320",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
         "UpdatedAt": "2021-07-19T05:20:17.000Z",
-        "UpdatedTz": "UTC"
+        "UpdatedTz": "UTC",
+        "Watchers": 2
       }
     },
     {
@@ -308,9 +442,15 @@
         "DataSourceId": "jira",
         "Id": "8c59e50f43b28c253d6773488e1b9a5c742ca506",
         "IssueId": "10313",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-07-20T10:41:48.000Z"
+        "UpdatedAt": "2021-07-20T10:41:48.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -321,9 +461,15 @@
         "DataSourceId": "jira",
         "Id": "4d9de8ba27868bfbbda528fa6fe5cd892e993c1a",
         "IssueId": "10321",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-07-20T11:05:21.000Z"
+        "UpdatedAt": "2021-07-20T11:05:21.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -334,9 +480,15 @@
         "DataSourceId": "jira",
         "Id": "0a00bc7cee98b036d5f45a6b97c415ba64c706b6",
         "IssueId": "10308",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-07-21T14:04:05.000Z"
+        "UpdatedAt": "2021-07-21T14:04:05.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -347,9 +499,15 @@
         "DataSourceId": "jira",
         "Id": "df374b621309f34c128baea20c1ae9371396a3cb",
         "IssueId": "10307",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-07-21T14:04:20.000Z"
+        "UpdatedAt": "2021-07-21T14:04:20.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -360,9 +518,15 @@
         "DataSourceId": "jira",
         "Id": "dbb9bb6c17739c989e81b5ec5cbe63dc68c93258",
         "IssueId": "10402",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-08-02T03:38:05.000Z"
+        "UpdatedAt": "2021-08-02T03:38:05.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -373,9 +537,15 @@
         "DataSourceId": "jira",
         "Id": "83ce7cfeecfdbe7a1f6b2902b17868bd1736c168",
         "IssueId": "10322",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-08-02T12:56:31.000Z"
+        "UpdatedAt": "2021-08-02T12:56:31.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -385,10 +555,17 @@
         "CreatedTz": "UTC",
         "DataSourceId": "jira",
         "Id": "f401474a0c7344960adfad26821f884651db1ab7",
+        "IsClosed": true,
         "IssueId": "10300",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-08-04T03:19:42.000Z"
+        "UpdatedAt": "2021-08-04T03:19:42.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -398,24 +575,18 @@
         "CreatedTz": "UTC",
         "DataSourceId": "jira",
         "Id": "0bf034aacc18657f9987ee5c95b81e9a704dc7d3",
+        "IsClosed": true,
         "IssueId": "10301",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
         "UpdatedAt": "2021-08-04T03:19:53.000Z",
-        "UpdatedTz": "UTC"
-      }
-    },
-    {
-      "Issue": {
-        "Activities": null,
-        "CreatedAt": "2021-06-21T12:20:30.000Z",
-        "CreatedTz": "Asia/Kolkata",
-        "DataSourceId": "jira",
-        "Id": "369b607925b9b4b3b372bf0983314bb518c8cd47",
-        "IssueId": "10303",
-        "Labels": null,
-        "Releases": null,
-        "UpdatedAt": "2021-08-04T03:20:11.000Z"
+        "UpdatedTz": "UTC",
+        "Watchers": 2
       }
     },
     {
@@ -425,11 +596,38 @@
         "CreatedTz": "UTC",
         "DataSourceId": "jira",
         "Id": "22b94925f99776e1a3978a98062feedac93bbb35",
+        "IsClosed": true,
         "IssueId": "10302",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
         "UpdatedAt": "2021-08-04T03:19:59.000Z",
-        "UpdatedTz": "UTC"
+        "UpdatedTz": "UTC",
+        "Watchers": 2
+      }
+    },
+    {
+      "Issue": {
+        "Activities": null,
+        "CreatedAt": "2021-06-21T12:20:30.000Z",
+        "CreatedTz": "Asia/Kolkata",
+        "DataSourceId": "jira",
+        "Id": "369b607925b9b4b3b372bf0983314bb518c8cd47",
+        "IsClosed": true,
+        "IssueId": "10303",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
+        "Labels": null,
+        "Releases": null,
+        "UpdatedAt": "2021-08-04T03:20:11.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -439,10 +637,17 @@
         "CreatedTz": "Asia/Kolkata",
         "DataSourceId": "jira",
         "Id": "31b389eb95cd1e30996704b9eb97e76a201ea906",
+        "IsClosed": true,
         "IssueId": "10304",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-08-04T03:20:21.000Z"
+        "UpdatedAt": "2021-08-04T03:20:21.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -453,10 +658,16 @@
         "DataSourceId": "jira",
         "Id": "6f2aeaeaf7b19d5b5a852181d6ce9b4e70fda1e6",
         "IssueId": "10403",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
         "UpdatedAt": "2021-08-05T06:25:43.000Z",
-        "UpdatedTz": "Asia/Kolkata"
+        "UpdatedTz": "Asia/Kolkata",
+        "Watchers": 1
       }
     },
     {
@@ -467,10 +678,37 @@
         "DataSourceId": "jira",
         "Id": "c1aefa44578c256dcda14df8eaaf0d2b8756885f",
         "IssueId": "10404",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
         "UpdatedAt": "2021-08-05T06:26:52.000Z",
-        "UpdatedTz": "Asia/Kolkata"
+        "UpdatedTz": "Asia/Kolkata",
+        "Watchers": 1
+      }
+    },
+    {
+      "Issue": {
+        "Activities": null,
+        "CreatedAt": "2021-08-05T06:28:43.000Z",
+        "CreatedTz": "Asia/Kolkata",
+        "DataSourceId": "jira",
+        "Id": "1ccdff8f9c3847152c17805840ba34daf95dec13",
+        "IsClosed": true,
+        "IssueId": "10405",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
+        "Labels": null,
+        "Releases": null,
+        "UpdatedAt": "2021-08-09T04:02:59.000Z",
+        "UpdatedTz": "Asia/Kolkata",
+        "Watchers": 1
       }
     },
     {
@@ -481,23 +719,15 @@
         "DataSourceId": "jira",
         "Id": "475327f16f5baef48c1b37cced94a7af4517c1b5",
         "IssueId": "10401",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-08-09T12:28:04.000Z"
-      }
-    },
-    {
-      "Issue": {
-        "Activities": null,
-        "CreatedAt": "2021-08-05T06:28:43.000Z",
-        "CreatedTz": "Asia/Kolkata",
-        "DataSourceId": "jira",
-        "Id": "1ccdff8f9c3847152c17805840ba34daf95dec13",
-        "IssueId": "10405",
-        "Labels": null,
-        "Releases": null,
-        "UpdatedAt": "2021-08-09T04:02:59.000Z",
-        "UpdatedTz": "Asia/Kolkata"
+        "UpdatedAt": "2021-08-09T12:28:04.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -507,10 +737,17 @@
         "CreatedTz": "UTC",
         "DataSourceId": "jira",
         "Id": "af86b60865ecf1e0d8962e5cc6fdf2b54aa20127",
+        "IsClosed": true,
         "IssueId": "10400",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
-        "UpdatedAt": "2021-08-12T06:21:34.000Z"
+        "UpdatedAt": "2021-08-12T06:21:34.000Z",
+        "Watchers": 1
       }
     },
     {
@@ -521,10 +758,16 @@
         "DataSourceId": "jira",
         "Id": "83e0670c7d7313d756e35236bdf3263e3f514ab9",
         "IssueId": "10318",
+        "JiraProject": {
+          "Id": "10201",
+          "Key": "ODIM",
+          "Name": "ODIM"
+        },
         "Labels": null,
         "Releases": null,
         "UpdatedAt": "2021-08-13T11:19:48.000Z",
-        "UpdatedTz": "UTC"
+        "UpdatedTz": "UTC",
+        "Watchers": 2
       }
     }
   ],

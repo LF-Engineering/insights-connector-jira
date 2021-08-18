@@ -424,10 +424,10 @@ func (j *DSJira) EnrichItem(ctx *shared.Ctx, item map[string]interface{}, roles 
 	rich["status_description"], _ = shared.Dig(fields, []string{"status", "description"}, true, false)
 	rich["status"], _ = shared.Dig(fields, []string{"status", "name"}, true, false)
 	rich["status_category_key"], _ = shared.Dig(fields, []string{"status", "statusCategory", "key"}, true, false)
-	rich["is_closed"] = 0
+	rich["is_closed"] = false
 	catKey, _ := rich["status_category_key"].(string)
 	if catKey == ClosedStatusCategoryKey {
-		rich["is_closed"] = 1
+		rich["is_closed"] = true
 	}
 	rich["summary"], _ = shared.Dig(fields, []string{"summary"}, true, false)
 	timeoriginalestimate, ok := shared.Dig(fields, []string{"timeoriginalestimate"}, false, true)
@@ -558,6 +558,11 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (data *models
 		// Event
 		docUUID, _ := doc["uuid"].(string)
 		issueID, _ := doc["id"].(string)
+		watchers, _ := doc["watchers"].(float64)
+		isClosed, _ := doc["is_closed"].(bool)
+		projectID, _ := doc["project_id"].(string)
+		projectKey, _ := doc["project_key"].(string)
+		projectName, _ := doc["project_name"].(string)
 		createdOn, _ := doc["creation_date"].(time.Time)
 		updatedOn, okUpdatedOn := doc["updated"].(time.Time)
 		createdTz, updatedTz := "", ""
@@ -616,15 +621,20 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (data *models
 				CreatedTz:    createdTz,
 				UpdatedAt:    strfmt.DateTime(updatedOn),
 				UpdatedTz:    updatedTz,
+				Watchers:     int64(watchers),
+				IsClosed:     isClosed,
+				JiraProject: &models.JiraProject{
+					ID:   projectID,
+					Key:  projectKey,
+					Name: projectName,
+				},
 				/*
 					Activities []*IssueActivity `json:"Activities"`
-					IsClosed bool `json:"IsClosed,omitempty"`
 					JiraProject *JiraProject `json:"JiraProject,omitempty"`
 					Labels []string `json:"Labels"`
 					Releases []string `json:"Releases"`
 					Title string `json:"Title,omitempty"`
 					URL string `json:"URL,omitempty"`
-					Watchers int64 `json:"Watchers,omitempty"`
 				*/
 			},
 		}
