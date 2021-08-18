@@ -66,12 +66,18 @@ var (
 	// JiraDataSource - constant
 	JiraDataSource = &models.DataSource{Name: "Jira", Slug: "jira"}
 	gJiraMetaData  = &models.MetaData{BackendName: "jira", BackendVersion: JiraBackendVersion}
+	gRoleToType    = map[string]string{
+		"issue_creator":        "jira_issue_created",
+		"issue_assignee":       "jira_issue_assignee_added",
+		"issue_reporter":       "jira_issue_reporter_added",
+		"comment_author":       "jira_comment_created",
+		"comment_updateAuthor": "jira_comment_updated",
+	}
 )
 
 // DSJira - DS implementation for Jira
 type DSJira struct {
-	// FIXME - change back to URL, but now rename to remember that origin is URL + (project if set)
-	JiraURL      string // Jira URL, for example https://jira.onap.org
+	URL          string // Jira URL, for example https://jira.onap.org
 	User         string // If user is provided then we assume that we don't have base64 encoded user:token yet
 	Token        string // If user is not specified we assume that token already contains "<username>:<your-api-token>"
 	PageSize     int    // Max API page size, defaults to JiraDefaultPageSize
@@ -100,10 +106,10 @@ func (j *DSJira) AddFlags() {
 func (j *DSJira) ParseArgs(ctx *shared.Ctx) (err error) {
 	// Jira Server URL
 	if shared.FlagPassed(ctx, "url") && *j.FlagURL != "" {
-		j.JiraURL = *j.FlagURL
+		j.URL = *j.FlagURL
 	}
 	if ctx.EnvSet("URL") {
-		j.JiraURL = ctx.Env("URL")
+		j.URL = ctx.Env("URL")
 	}
 
 	// Page size
@@ -157,22 +163,22 @@ func (j *DSJira) ParseArgs(ctx *shared.Ctx) (err error) {
 
 // Validate - is current DS configuration OK?
 func (j *DSJira) Validate() (err error) {
-	if strings.HasSuffix(j.JiraURL, "/") {
-		j.JiraURL = j.JiraURL[:len(j.JiraURL)-1]
+	if strings.HasSuffix(j.URL, "/") {
+		j.URL = j.URL[:len(j.URL)-1]
 	}
-	if j.JiraURL == "" {
+	if j.URL == "" {
 		err = fmt.Errorf("Jira URL must be set")
 	}
 	return
 }
 
 // Endpoint - used to mark (set/get) last update
-// JiraURL is not enough, because if you filter per project (if iinternal --jira-project-filter flag is set) then those dates can be different
+// URL is not enough, because if you filter per project (if iinternal --jira-project-filter flag is set) then those dates can be different
 func (j *DSJira) Endpoint(ctx *shared.Ctx) string {
 	if ctx.ProjectFilter && ctx.Project != "" {
-		return j.JiraURL + " " + ctx.Project
+		return j.URL + " " + ctx.Project
 	}
-	return j.JiraURL
+	return j.URL
 }
 
 // Init - initialize Jira data source
@@ -252,7 +258,6 @@ func (j *DSJira) EnrichComments(ctx *shared.Ctx, comments []interface{}, item ma
 		}
 		richComment["issue_key"] = item["key"]
 		richComment["issue_url"] = item["url"]
-
 		authors := []string{"author", "updateAuthor"}
 		for _, a := range authors {
 			author, ok := shared.Dig(comment, []string{a}, false, true)
@@ -554,6 +559,12 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (data *models
 	}
 	source := data.DataSource.Slug
 	for _, iDoc := range docs {
+		var (
+			labels     []string
+			releases   []string
+			activities []*models.IssueActivity
+			issueBody  *string
+		)
 		doc, _ := iDoc.(map[string]interface{})
 		// Event
 		docUUID, _ := doc["uuid"].(string)
@@ -563,6 +574,30 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (data *models
 		projectID, _ := doc["project_id"].(string)
 		projectKey, _ := doc["project_key"].(string)
 		projectName, _ := doc["project_name"].(string)
+		sIssueBody, _ := doc["main_description"].(string)
+		if sIssueBody != "" {
+			issueBody = &sIssueBody
+		}
+		issueURL, _ := doc["url"].(string)
+		title, _ := doc["summary"].(string)
+		iLabels, okLabels := doc["labels"].([]interface{})
+		if okLabels {
+			for _, iLabel := range iLabels {
+				label, _ := iLabel.(string)
+				if label != "" {
+					labels = append(labels, label)
+				}
+			}
+		}
+		iReleases, okReleases := doc["releases"].([]interface{})
+		if okReleases {
+			for _, iRelease := range iReleases {
+				release, _ := iRelease.(string)
+				if release != "" {
+					releases = append(releases, release)
+				}
+			}
+		}
 		createdOn, _ := doc["creation_date"].(time.Time)
 		updatedOn, okUpdatedOn := doc["updated"].(time.Time)
 		createdTz, updatedTz := "", ""
@@ -580,6 +615,41 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (data *models
 				if role == "assignee" && createdTz == "" && tz != "" {
 					createdTz = tz
 				}
+				dt, _ := roleData["dt"].(time.Time)
+				body := issueBody
+				if role != "creator" {
+					body = nil
+				}
+				//s := "obfuscated issue body"
+				//body = &s
+				activityType := gRoleToType["issue_"+role]
+				actUUID := shared.UUIDNonEmpty(ctx, docUUID, activityType)
+				name, _ := roleData["name"].(string)
+				username, _ := roleData["username"].(string)
+				email, _ := roleData["email"].(string)
+				name, username = shared.PostprocessNameUsername(name, username, email)
+				userUUID := shared.UUIDAffs(ctx, source, email, name, username)
+				// email = "[redacted]"
+				identity := &models.Identity{
+					ID:           userUUID,
+					DataSourceID: source,
+					Name:         name,
+					Username:     username,
+					Email:        email,
+				}
+				activities = append(
+					activities,
+					&models.IssueActivity{
+						ID:           actUUID,
+						Body:         body,
+						ActivityType: activityType,
+						CreatedAt:    strfmt.DateTime(dt),
+						CreatedTz:    tz,
+						IssueKey:     docUUID,
+						IssueID:      issueID,
+						Identity:     identity,
+					},
+				)
 			}
 		}
 		if createdTz == "" {
@@ -588,8 +658,17 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (data *models
 		comments, okComments := doc["issue_comments"].([]map[string]interface{})
 		if okComments {
 			for _, comment := range comments {
+				var (
+					commentBody *string
+					authorDate  time.Time
+				)
 				commentRoles, okCommentRoles := comment["roles"].([]map[string]interface{})
 				if okCommentRoles {
+					sCommentBody, _ := comment["body"].(string)
+					if sCommentBody != "" {
+						commentBody = &sCommentBody
+					}
+					commentID, _ := comment["comment_id"].(string)
 					for _, roleData := range commentRoles {
 						tz, okTz := roleData["tz"].(string)
 						dt, okDt := roleData["dt"].(time.Time)
@@ -608,6 +687,51 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (data *models
 								}
 							}
 						}
+						if !okDt {
+							continue
+						}
+						role, _ := roleData["type"].(string)
+						if role == "author" {
+							authorDate = dt
+						} else {
+							if !dt.After(authorDate) {
+								// same comment - created = updated
+								continue
+							}
+						}
+						if !okTz {
+							tz = "UTC"
+						}
+						activityType := gRoleToType["comment_"+role]
+						actUUID := shared.UUIDNonEmpty(ctx, docUUID, activityType, commentID)
+						//s := "obfuscated comment body"
+						//commentBody = &s
+						name, _ := roleData["name"].(string)
+						username, _ := roleData["username"].(string)
+						email, _ := roleData["email"].(string)
+						name, username = shared.PostprocessNameUsername(name, username, email)
+						userUUID := shared.UUIDAffs(ctx, source, email, name, username)
+						//email = "[redacted]"
+						identity := &models.Identity{
+							ID:           userUUID,
+							DataSourceID: source,
+							Name:         name,
+							Username:     username,
+							Email:        email,
+						}
+						activities = append(
+							activities,
+							&models.IssueActivity{
+								ID:           actUUID,
+								Body:         commentBody,
+								ActivityType: activityType,
+								CreatedAt:    strfmt.DateTime(dt),
+								CreatedTz:    tz,
+								IssueKey:     docUUID,
+								IssueID:      issueID,
+								Identity:     identity,
+							},
+						)
 					}
 				}
 			}
@@ -623,19 +747,16 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (data *models
 				UpdatedTz:    updatedTz,
 				Watchers:     int64(watchers),
 				IsClosed:     isClosed,
+				Title:        title,
+				URL:          issueURL,
+				Labels:       labels,
+				Releases:     releases,
+				Activities:   activities,
 				JiraProject: &models.JiraProject{
 					ID:   projectID,
 					Key:  projectKey,
 					Name: projectName,
 				},
-				/*
-					Activities []*IssueActivity `json:"Activities"`
-					JiraProject *JiraProject `json:"JiraProject,omitempty"`
-					Labels []string `json:"Labels"`
-					Releases []string `json:"Releases"`
-					Title string `json:"Title,omitempty"`
-					URL string `json:"URL,omitempty"`
-				*/
 			},
 		}
 		if !okUpdatedOn {
@@ -653,7 +774,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (data *models
 
 // GetFields - implement get fields for jira datasource
 func (j *DSJira) GetFields(ctx *shared.Ctx) (customFields map[string]JiraField, err error) {
-	url := j.JiraURL + JiraAPIRoot + JiraAPIField
+	url := j.URL + JiraAPIRoot + JiraAPIField
 	method := "GET"
 	var headers map[string]string
 	if j.Token != "" {
@@ -852,7 +973,7 @@ func (j *DSJira) GenSearchFields(ctx *shared.Ctx, issue interface{}, uuid string
 // AddMetadata - add metadata to the item
 func (j *DSJira) AddMetadata(ctx *shared.Ctx, issue interface{}) (mItem map[string]interface{}) {
 	mItem = make(map[string]interface{})
-	origin := j.JiraURL
+	origin := j.URL
 	tags := ctx.Tags
 	if len(tags) == 0 {
 		tags = []string{origin}
@@ -904,7 +1025,7 @@ func (j *DSJira) ProcessIssue(ctx *shared.Ctx, allIssues, allDocs *[]interface{}
 				c <- e
 			}
 		}()
-		urlRoot := j.JiraURL + JiraAPIRoot + JiraAPIIssue + "/" + issueID + JiraAPIComment
+		urlRoot := j.URL + JiraAPIRoot + JiraAPIIssue + "/" + issueID + JiraAPIComment
 		startAt := int64(0)
 		maxResults := int64(j.PageSize)
 		epochMS := from.UnixNano() / 1e6
@@ -1196,7 +1317,7 @@ func (j *DSJira) Sync(ctx *shared.Ctx) (err error) {
 		from = shared.DefaultDateFrom
 	}
 	to = ctx.DateTo
-	url := j.JiraURL + JiraAPIRoot + JiraAPISearch
+	url := j.URL + JiraAPIRoot + JiraAPISearch
 	startAt := int64(0)
 	maxResults := int64(j.PageSize)
 	jql := ""
