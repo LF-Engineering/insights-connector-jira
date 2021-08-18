@@ -195,19 +195,96 @@ func (j *DSJira) Init(ctx *shared.Ctx) (err error) {
 	return
 }
 
+// EnrichComments - return rich item from raw item for a given author type
+func (j *DSJira) EnrichComments(ctx *shared.Ctx, comments []interface{}, item map[string]interface{}) (richComments []interface{}, err error) {
+	for _, comment := range comments {
+		richComment := make(map[string]interface{})
+		for _, field := range shared.RawFields {
+			v, _ := item[field]
+			richComment[field] = v
+		}
+		fields := []string{"project_id", "project_key", "project_name", "issue_type", "issue_description"}
+		for _, field := range fields {
+			richComment[field] = item[field]
+		}
+		// This overwrites project passed from outside, but this was requested, we can comment this out if needed
+		if ctx.Project == "" {
+			richComment["project"] = item["project_key"]
+		} else {
+			richComment["project"] = ctx.Project
+		}
+		richComment["issue_key"] = item["key"]
+		richComment["issue_url"] = item["url"]
+
+		authors := []string{"author", "updateAuthor"}
+		for _, a := range authors {
+			author, ok := shared.Dig(comment, []string{a}, false, true)
+			if ok {
+				richComment[a], _ = shared.Dig(author, []string{"displayName"}, true, false)
+				tz, ok := shared.Dig(author, []string{"timeZone"}, false, true)
+				if ok {
+					richComment[a+"_tz"] = tz
+				}
+			} else {
+				richComment[a] = nil
+			}
+		}
+		var dt time.Time
+		var created interface{}
+		for _, field := range []string{"created", "updated"} {
+			idt, _ := shared.Dig(comment, []string{field}, true, false)
+			dt, err = shared.TimeParseInterfaceString(idt)
+			if err != nil {
+				richComment[field] = nil
+			} else {
+				richComment[field] = dt
+			}
+			if field == "created" {
+				created = idt
+			}
+		}
+		cid, _ := shared.Dig(comment, []string{"id"}, true, false)
+		richComment["body"], _ = shared.Dig(comment, []string{"body"}, true, false)
+		richComment["comment_id"] = cid
+		iid, ok := item["id"].(string)
+		if !ok {
+			err = fmt.Errorf("missing string id field in issue %+v", shared.DumpKeys(item))
+			return
+		}
+		comid, ok := cid.(string)
+		if !ok {
+			err = fmt.Errorf("missing string id field in comment %+v", shared.DumpKeys(comment))
+			return
+		}
+		richComment["id"] = fmt.Sprintf("%s_comment_%s", iid, comid)
+		richComment["type"] = "comment"
+		// FIXME
+		fmt.Printf("comment created at %+v\n", created)
+		/*
+			if affs {
+				var affsItems map[string]interface{}
+				itemComment := map[string]interface{}{"data": map[string]interface{}{"fields": comment}}
+				affsItems, err = ds.AffsItems(ctx, itemComment, []string{Author, "updateAuthor"}, created)
+				if err != nil {
+					return
+				}
+				for prop, value := range affsItems {
+					richComment[prop] = value
+				}
+			}
+		*/
+		// NOTE: From shared
+		richComment["metadata__enriched_on"] = time.Now()
+		// richComment[ProjectSlug] = ctx.ProjectSlug
+		// richComment["groups"] = ctx.Groups
+		richComments = append(richComments, richComment)
+	}
+	return
+}
+
 // EnrichItem - return rich item from raw item for a given author type
-func (j *DSJira) EnrichItem(ctx *shared.Ctx, item map[string]interface{}) (rich map[string]interface{}, err error) {
+func (j *DSJira) EnrichItem(ctx *shared.Ctx, item map[string]interface{}, roles []string) (rich map[string]interface{}, err error) {
 	// FIXME
-	/*
-		defer func() {
-			gM.Lock()
-			defer gM.Unlock()
-			gRa = append(gRa, item)
-			gRi = append(gRi, rich)
-		}()
-		jsonBytes, _ := jsoniter.Marshal(item)
-		shared.Printf("%s\n", string(jsonBytes))
-	*/
 	rich = make(map[string]interface{})
 	// NOTE: From shared
 	rich["metadata__enriched_on"] = time.Now()
@@ -276,7 +353,6 @@ func (j *DSJira) GetFields(ctx *shared.Ctx) (customFields map[string]JiraField, 
 // items is a current pack of input items
 // docs is a pointer to where extracted identities will be stored
 func (j *DSJira) JiraEnrichItems(ctx *shared.Ctx, thrN int, items []interface{}, docs *[]interface{}, final bool) (err error) {
-	// FIXME
 	shared.Printf("input processing(%d/%d/%v)\n", len(items), len(*docs), final)
 	outputDocs := func() {
 		if len(*docs) > 0 {
@@ -304,6 +380,98 @@ func (j *DSJira) JiraEnrichItems(ctx *shared.Ctx, thrN int, items []interface{},
 	// NOTE: non-generic code starts
 	if ctx.Debug > 0 {
 		shared.Printf("jira enrich items %d/%d func\n", len(items), len(*docs))
+	}
+	var (
+		mtx *sync.RWMutex
+		ch  chan error
+	)
+	if thrN > 1 {
+		mtx = &sync.RWMutex{}
+		ch = make(chan error)
+	}
+	nThreads := 0
+	roles := []string{"creator", "assignee", "reporter"}
+	procItem := func(c chan error, idx int) (e error) {
+		if thrN > 1 {
+			mtx.RLock()
+		}
+		item := items[idx]
+		if thrN > 1 {
+			mtx.RUnlock()
+		}
+		defer func() {
+			if c != nil {
+				c <- e
+			}
+		}()
+		// NOTE: never refer to _source - we no longer use ES
+		doc, ok := item.(map[string]interface{})
+		if !ok {
+			e = fmt.Errorf("Failed to parse document %+v", doc)
+			return
+		}
+		var rich map[string]interface{}
+		rich, e = j.EnrichItem(ctx, doc, roles)
+		if e != nil {
+			return
+		}
+		defer func() {
+			if thrN > 1 {
+				mtx.Lock()
+			}
+			*docs = append(*docs, rich)
+			// NOTE: flush here
+			if len(*docs) >= ctx.PackSize {
+				outputDocs()
+			}
+			if thrN > 1 {
+				mtx.Unlock()
+			}
+		}()
+		comms, ok := shared.Dig(doc, []string{"data", "comments_data"}, false, true)
+		if !ok {
+			return
+		}
+		comments, _ := comms.([]interface{})
+		if len(comments) == 0 {
+			return
+		}
+		var richComments []interface{}
+		richComments, e = j.EnrichComments(ctx, comments, rich)
+		if e != nil {
+			return
+		}
+		rich["issue_comments"] = richComments
+		return
+	}
+	if thrN > 1 {
+		for i := range items {
+			go func(i int) {
+				_ = procItem(ch, i)
+			}(i)
+			nThreads++
+			if nThreads == thrN {
+				err = <-ch
+				if err != nil {
+					return
+				}
+				nThreads--
+			}
+		}
+		for nThreads > 0 {
+			err = <-ch
+			nThreads--
+			if err != nil {
+				return
+			}
+		}
+		return
+	}
+	for i := range items {
+		err = procItem(nil, i)
+		if err != nil {
+			return
+		}
 	}
 	return
 }
