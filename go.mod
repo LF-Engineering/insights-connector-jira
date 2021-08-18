@@ -3,8 +3,8 @@ module github.com/LF-Engineering/insights-datasource-jira
 go 1.15
 
 require (
-	github.com/LF-Engineering/dev-analytics-libraries v1.1.20
-	github.com/LF-Engineering/insights-datasource-shared v0.0.0-20210817071702-6ebb924d0056
+	//github.com/LF-Engineering/insights-datasource-shared latest
+	github.com/LF-Engineering/insights-datasource-shared v0.0.0-20210818074650-77ec02ce7910
 	github.com/go-openapi/errors v0.20.0
 	github.com/go-openapi/strfmt v0.20.1
 	github.com/go-openapi/swag v0.19.15
