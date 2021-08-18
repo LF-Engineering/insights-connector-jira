@@ -55,6 +55,15 @@ definitions:
         type: string
         example: jira
         description: data source type slug (FK)
+  JiraProject:
+    type: object
+    properties:
+      Id:
+        type: string
+      Name:
+        type: string
+      Key:
+        type: string
   IssueActivity:
     type: object
     properties:
@@ -140,11 +149,18 @@ definitions:
         type: string
         example: jira
         description: data source type slug (FK)
+      JiraProject:
+        type: object
+        $ref: "#/definitions/JiraProject"
       Activities:
         type: array
         items:
           $ref: "#/definitions/IssueActivity"
       Labels:
+        type: array
+        items:
+          type: string
+      Releases:
         type: array
         items:
           type: string
