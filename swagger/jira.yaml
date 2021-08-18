@@ -1,9 +1,9 @@
 ---
 swagger: '2.0'
 info:
-  title: RocketChat data source
+  title: Jira data source
   version: '1.0'
-  description: RocketChat data source V2
+  description: Jira data source V2
 paths:    # swagger forces me to add at least one path
   /noop:
     get:
@@ -17,16 +17,16 @@ definitions:
     properties:
       Slug:
         type: string
-        example: rocketchat
+        example: jira
       Name:
         type: string
-        example: RocketChat
+        example: Jira
   MetaData:
     type: object
     properties:
       BackendName:
         type: string
-        example: insights-datasource-rocketchat
+        example: insights-datasource-jira
       BackendVersion:
         type: string
         example: v0.1.0
@@ -53,128 +53,111 @@ definitions:
         example: lgryglicki
       DataSourceId:
         type: string
-        example: rocketchat
+        example: jira
         description: data source type slug (FK)
-  Channel:
+  IssueActivity:
     type: object
     properties:
       Id:
         type: string
         example: 1234567890abcdef
         description: PK - up to 50 chars
-      ChannelId:
+      IssueKey:
         type: string
         example: 1234567890abcdef
-        description: RocketChat internal chat channel ID
-      Name:
+        description: FK - up to 50 chars, points to Issue.Id
+      IssueId:
         type: string
-        example: Channel name
-      Slug:
+        example: 1234567890abcdef
+        description: points to Issue.IssueId 
+      ParentKey:
         type: string
-        description: RocketChat endpoint contain two values server URL and channel name, so we need to concatename them with space (not allowed in URL)
-        example: 'https://chat.hyperledger.org sawtooth'
-      Topic:
+        x-nullable: true
+        example: 1234567890abcdef
+        description: FK - up to 50 chars, points to Issue.Id (comments have a parent issue for instance)
+      ParentIssueId:
         type: string
-        example: Channel topic
-      MemberCount:
-        type: integer
-        description: this looks like a compute field - do we really need it? We can calculate this from RDS.
-        example: 10
-      MessageCount:
-        type: integer
-        description: this looks like a compute field - do we really need it? We can calculate this from RDS.
-        example: 10
+        x-nullable: true
+        example: 1234567890abcdef
+        description: points to Issue.IssueId (comments have a parent issue for instance)
       CreatedAt:
         type: string
         format: date-time
         example: '2019-09-02 03:00:33.000000'
-      UpdatedAt:
+      CreatedTz:
         type: string
-        format: date-time
-        description: this looks like a compute field - do we really need it? We can calculate this from RDS.
-        example: '2019-09-02 03:00:33.000000'
-  MessageReaction:
-    type: object
-    properties:
-      Type:
-        type: string
-        example: ok
-        description: literal reaction type
-      Emoji:
-        type: string
-        example: 😃
-        description: UNICODE emoji data
-      Author:
-        type: object
-        $ref: "#/definitions/Identity"
-  MessageActivity:
-    type: object
-    properties:
-      Id:
-        type: string
-        example: 1234567890abcdef
-        description: PK - up to 50 chars
-      MessageId:
-        type: string
-        example: 1234567890abcdef
-        description: FK - up to 50 chars
-      CreatedAt:
-        type: string
-        format: date-time
-        example: '2019-09-02 03:00:33.000000'
+        example: Europe/Warsaw (FIXME - confirm)
       ActivityType:
         type: string
-        example: rocketchat_message_created, rocketchat_message_edited, rocketchat_message_reaction, rocketchat_message_mention, rocketchat_attachment_added, rocketchat_attachment_edited
+        example: FIXME provide full list
         description: allows reconstructing relations
       Body:
         type: string
-        description: message, reply, body, file name
+        description: issue/comment body
         example: My comment body
         x-nullable: true
       Identity:
         type: object
         description: activity creator (ProjectDataSourceIdentity)
         $ref: "#/definitions/Identity"
-      Reaction:
-        type: object
-        x-nullable: true
-        $ref: "#/definitions/MessageReaction"
-  Message:
+  Issue:
     type: object
     properties:
       Id:
         type: string
         example: 1234567890abcdef
         description: PK - up to 50 chars
+      IssueId:
+        type: string
+        example: 1234567890abcdef
+        description: Jira internal issue ID
       CreatedAt:
         type: string
         format: date-time
-      URLs:
-        type: array
-        items:
-          type: string
-          example: https://msg-url
-      Type:
+      CreatedTz:
         type: string
-        example: ok
-        description: can be message, attachment
-      Channel:
-        type: object
-        $ref: "#/definitions/Channel"
+        example: Europe/Warsaw (FIXME - confirm)
+      UpdatedAt:
+        type: string
+        format: date-time
+        example: '2019-09-02 03:00:33.000000'
+      UpdatedTz:
+        type: string
+        example: Europe/Warsaw (FIXME - confirm)
+      URL:
+        type: string
+        example: https://msg-url
+      Title:
+        type: string
+        example: My issue title
+      Watchers:
+        type: integer
+        example: 2
+      IsClosed:
+        type: boolean
+        example: false
+      DataSourceId:
+        type: string
+        example: jira
+        description: data source type slug (FK)
       Activities:
         type: array
         items:
-          $ref: "#/definitions/MessageActivity"
+          $ref: "#/definitions/IssueActivity"
+      Labels:
+        type: array
+        items:
+          type: string
   Event:
     type: object
-    description: single event in RocketChat is a message, it contains neted activities for that message
+    description: single event in Jira is an issue, it contains neted activities for that issue
     properties:
-      Message:
+      Issue:
         type: object
-        $ref: "#/definitions/Message"
+        $ref: "#/definitions/Issue"
   Data:
     type: object
-    description: this is the final output of insights-datasource-rocketchat, data source will output packs up to some fixed size, like 500 events pack at once
+    description: this is the final output of insights-datasource-jira, data source will output packs up to some fixed size, like 500 events pack at once
     properties:
       DataSource:
         type: object
@@ -183,15 +166,9 @@ definitions:
         type: object
         $ref: "#/definitions/MetaData"
       Endpoint:
-        type: object
-        description: RocketChat endpoint for which data is being sent
-        properties:
-          RocketChatServer:
-            type: string
-            example: https://chat.hyperledger.org
-          RocketChatChannel:
-            type: string
-            example: sawtooth
+        type: string
+        description: Jira endpoint for which data is being sent
+        example: https://jira.onap.org
       Events:
         type: array
         items:
