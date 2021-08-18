@@ -35,8 +35,8 @@ github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/LF-Engineering/dev-analytics-libraries v1.1.20 h1:jDm0J9Cba7wu50Kt4yVEhNAklC9nUGGqsywtiWewXFc=
 github.com/LF-Engineering/dev-analytics-libraries v1.1.20/go.mod h1:O+9mOX1nf6qGKrZne33F6speSzrGj6+Y1tPF6jh/mcw=
-github.com/LF-Engineering/insights-datasource-shared v0.0.0-20210818074650-77ec02ce7910 h1:9AnGgaimT2m9lTDeThr2dvadj1z5+94MpifEJF9l38E=
-github.com/LF-Engineering/insights-datasource-shared v0.0.0-20210818074650-77ec02ce7910/go.mod h1:ETFWFXJbKtsIQsu6ms7zfbVzZ5yYO8MMNcON+7QUAjg=
+github.com/LF-Engineering/insights-datasource-shared v0.0.0-20210818100325-30835e42b5c4 h1:vOp1+SPRcVDcV0YsnvKIMaEyOVlWPsdYMiU7ITAZrIs=
+github.com/LF-Engineering/insights-datasource-shared v0.0.0-20210818100325-30835e42b5c4/go.mod h1:ETFWFXJbKtsIQsu6ms7zfbVzZ5yYO8MMNcON+7QUAjg=
 github.com/PuerkitoBio/purell v1.1.0/go.mod h1:c11w/QuzBsJSee3cPx9rAFu61PvFxuPbtSwDGJws/X0=
 github.com/PuerkitoBio/purell v1.1.1 h1:WEQqlqaGbrPkxLJWfBwQmfEAE1Z7ONdDLqrN38tNFfI=
 github.com/PuerkitoBio/purell v1.1.1/go.mod h1:c11w/QuzBsJSee3cPx9rAFu61PvFxuPbtSwDGJws/X0=

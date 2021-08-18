@@ -282,10 +282,258 @@ func (j *DSJira) EnrichComments(ctx *shared.Ctx, comments []interface{}, item ma
 	return
 }
 
-// EnrichItem - return rich item from raw item for a given author type
+// EnrichItem - return rich item from raw item
 func (j *DSJira) EnrichItem(ctx *shared.Ctx, item map[string]interface{}, roles []string) (rich map[string]interface{}, err error) {
-	// FIXME
+	// copy RawFields
 	rich = make(map[string]interface{})
+	for _, field := range shared.RawFields {
+		v, _ := item[field]
+		rich[field] = v
+	}
+	issue, ok := item["data"].(map[string]interface{})
+	if !ok {
+		err = fmt.Errorf("missing data field in item %+v", shared.DumpKeys(item))
+		return
+	}
+	changes, ok := shared.Dig(issue, []string{"changelog", "total"}, false, false)
+	if ok {
+		rich["changes"] = changes
+	} else {
+		// Only evil Jiras do that, for example http://jira.akraino.org
+		// Almost the same address works OK https://jira.akraino.org
+		rich["changes"] = 0
+	}
+	fields, ok := issue["fields"].(map[string]interface{})
+	if !ok {
+		err = fmt.Errorf("missing fields field in issue %+v", shared.DumpKeys(issue))
+		return
+	}
+	roleNames := []string{}
+	roleData := []map[string]interface{}{}
+	for _, role := range roles {
+		v, ok := fields[role].(map[string]interface{})
+		if !ok || v == nil {
+			continue
+		}
+		roleNames = append(roleNames, role)
+		// name, displayName, timeZone
+		roleData = append(roleData, v)
+	}
+	created, _ := shared.Dig(fields, []string{"created"}, true, false)
+	rich["creation_date"] = created
+	desc, ok := fields["description"].(string)
+	if ok {
+		rich["main_description_analyzed"] = desc
+		if len(desc) > shared.KeywordMaxlength {
+			desc = desc[:shared.KeywordMaxlength]
+		}
+		rich["main_description"] = desc
+	}
+	rich["issue_type"], _ = shared.Dig(fields, []string{"issuetype", "name"}, true, false)
+	rich["issue_description"], _ = shared.Dig(fields, []string{"issuetype", "description"}, true, false)
+	labels, ok := fields["labels"]
+	if ok {
+		rich["labels"] = labels
+	}
+	priority, ok := shared.Dig(fields, []string{"priority", "name"}, false, true)
+	if ok {
+		rich["priority"] = priority
+	}
+	progress, ok := shared.Dig(fields, []string{"progress", "total"}, false, true)
+	if ok {
+		rich["progress_total"] = progress
+	}
+	rich["project_id"], _ = shared.Dig(fields, []string{"project", "id"}, true, false)
+	rich["project_key"], _ = shared.Dig(fields, []string{"project", "key"}, true, false)
+	rich["project_name"], _ = shared.Dig(fields, []string{"project", "name"}, true, false)
+	// This overwrites project passed from outside, but this was requested, we can comment this out if needed
+	if ctx.Project == "" {
+		rich["project"] = rich["project_key"]
+	} else {
+		rich["project"] = ctx.Project
+	}
+	resolution, ok := fields["resolution"]
+	if ok && resolution != nil {
+		rich["resolution_id"], _ = shared.Dig(resolution, []string{"id"}, true, false)
+		rich["resolution_name"], _ = shared.Dig(resolution, []string{"name"}, true, false)
+		rich["resolution_description"], _ = shared.Dig(resolution, []string{"description"}, true, false)
+		rich["resolution_self"], _ = shared.Dig(resolution, []string{"self"}, true, false)
+	}
+	rich["resolution_date"], _ = shared.Dig(fields, []string{"resolutiondate"}, true, false)
+	rich["status_description"], _ = shared.Dig(fields, []string{"status", "description"}, true, false)
+	rich["status"], _ = shared.Dig(fields, []string{"status", "name"}, true, false)
+	rich["status_category_key"], _ = shared.Dig(fields, []string{"status", "statusCategory", "key"}, true, false)
+	rich["is_closed"] = 0
+	catKey, _ := rich["status_category_key"].(string)
+	if catKey == ClosedStatusCategoryKey {
+		rich["is_closed"] = 1
+	}
+	rich["summary"], _ = shared.Dig(fields, []string{"summary"}, true, false)
+	timeoriginalestimate, ok := shared.Dig(fields, []string{"timeoriginalestimate"}, false, true)
+	if ok {
+		rich["original_time_estimation"] = timeoriginalestimate
+		if timeoriginalestimate != nil {
+			fVal, ok := timeoriginalestimate.(float64)
+			if ok {
+				rich["original_time_estimation_hours"] = int(fVal / 3600.0)
+			}
+		}
+	}
+	timespent, ok := shared.Dig(fields, []string{"timespent"}, false, true)
+	if ok {
+		rich["time_spent"] = timespent
+		if timespent != nil {
+			fVal, ok := timespent.(float64)
+			if ok {
+				rich["time_spent_hours"] = int(fVal / 3600.0)
+			}
+		}
+	}
+	timeestimate, ok := shared.Dig(fields, []string{"timeestimate"}, false, true)
+	if ok {
+		rich["time_estimation"] = timeestimate
+		if timeestimate != nil {
+			fVal, ok := timeestimate.(float64)
+			if ok {
+				rich["time_estimation_hours"] = int(fVal / 3600.0)
+			}
+		}
+	}
+	rich["watchers"], _ = shared.Dig(fields, []string{"watches", "watchCount"}, true, false)
+	iKey, _ := shared.Dig(issue, []string{"key"}, true, false)
+	key, ok := iKey.(string)
+	if !ok {
+		err = fmt.Errorf("cannot read key as string from %T %+v", iKey, iKey)
+		return
+	}
+	rich["key"] = key
+	iid, ok := issue["id"].(string)
+	if !ok {
+		err = fmt.Errorf("missing string id field in issue %+v", shared.DumpKeys(issue))
+		return
+	}
+	rich["id"] = iid
+	// rich["id"] = fmt.Sprintf("%s_issue_%s_user_%s", rich[UUID], iid, author)
+	rich["number_of_comments"] = 0
+	comments, ok := issue["comments_data"].([]interface{})
+	if ok {
+		rich["number_of_comments"] = len(comments)
+	}
+	updated, _ := shared.Dig(fields, []string{"updated"}, false, true)
+	rich["updated"] = updated
+	origin, ok := rich["origin"].(string)
+	if !ok {
+		err = fmt.Errorf("cannot read origin as string from rich %+v", rich)
+		return
+	}
+	rich["url"] = origin + "/browse/" + key
+	var (
+		sCreated  string
+		createdDt time.Time
+		sUpdated  string
+		updatedDt time.Time
+		e         error
+		o         bool
+	)
+	sCreated, o = created.(string)
+	if o {
+		createdDt, e = shared.TimeParseES(sCreated)
+		if e != nil {
+			o = false
+		}
+	}
+	if o {
+		sUpdated, o = updated.(string)
+	}
+	if o {
+		updatedDt, e = shared.TimeParseES(sUpdated)
+		if e != nil {
+			o = false
+		}
+	}
+	if o {
+		now := time.Now()
+		days := float64(updatedDt.Sub(createdDt).Seconds()) / 86400.0
+		rich["time_to_close_days"] = days
+		days = float64(now.Sub(createdDt).Seconds()) / 86400.0
+		rich["time_to_last_update_days"] = days
+	} else {
+		rich["time_to_close_days"] = nil
+		rich["time_to_last_update_days"] = nil
+	}
+	fixVersions, ok := shared.Dig(fields, []string{"fixVersions"}, false, true)
+	if ok {
+		rels := []interface{}{}
+		versions, ok := fixVersions.([]interface{})
+		if ok {
+			for _, version := range versions {
+				name, ok := shared.Dig(version, []string{"name"}, false, true)
+				if ok {
+					rels = append(rels, name)
+				}
+			}
+		}
+		rich["releases"] = rels
+	}
+	for field, fieldValue := range fields {
+		if !strings.HasPrefix(strings.ToLower(field), "customfield_") {
+			continue
+		}
+		f, ok := fieldValue.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		name, ok := f["Name"]
+		if !ok {
+			continue
+		}
+		if name == "Story Points" {
+			rich["story_points"] = f["value"]
+		} else if name == "Sprint" {
+			v, ok := f["value"]
+			if !ok {
+				continue
+			}
+			iAry, ok := v.([]interface{})
+			if !ok {
+				continue
+			}
+			if len(iAry) == 0 {
+				continue
+			}
+			s, ok := iAry[0].(string)
+			if !ok {
+				continue
+			}
+			rich["sprint"] = strings.Split(shared.PartitionString(s, ",name=")[2], ",")[0]
+			rich["sprint_start"] = strings.Split(shared.PartitionString(s, ",startDate=")[2], ",")[0]
+			rich["sprint_end"] = strings.Split(shared.PartitionString(s, ",endDate=")[2], ",")[0]
+			rich["sprint_complete"] = strings.Split(shared.PartitionString(s, ",completeDate=")[2], ",")[0]
+		}
+	}
+	// If affiliations DB enabled
+	// FIXME
+	/*
+		if affs {
+			var affsItems map[string]interface{}
+			affsItems, err = j.AffsItems(ctx, item, []string{"assignee", "reporter", "creator"}, created)
+			if err != nil {
+				return
+			}
+			for prop, value := range affsItems {
+				rich[prop] = value
+			}
+			for _, suff := range AffsFields {
+				rich[Author+suff] = rich[author+suff]
+			}
+			orgsKey := author + MultiOrgNames
+			_, ok := Dig(rich, []string{orgsKey}, false, true)
+			if !ok {
+				rich[orgsKey] = []interface{}{}
+			}
+		}
+	*/
+	rich["type"] = "issue"
 	// NOTE: From shared
 	rich["metadata__enriched_on"] = time.Now()
 	// rich[ProjectSlug] = ctx.ProjectSlug
@@ -306,7 +554,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (data *models
 		doc, _ := iDoc.(map[string]interface{})
 		// Event
 		// FIXME
-		fmt.Printf("%s: %+v\n", source, doc)
+		fmt.Printf("%s: %d\n", source, len(doc))
 		var updatedOn time.Time
 		event := &models.Event{}
 		data.Events = append(data.Events, event)
