@@ -21,6 +21,9 @@ definitions:
       Name:
         type: string
         example: Jira
+      Model:
+        type: string
+        example: issues
   MetaData:
     type: object
     properties:

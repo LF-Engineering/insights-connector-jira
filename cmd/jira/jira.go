@@ -64,7 +64,7 @@ var (
 	gMaxUpstreamDt      time.Time
 	gMaxUpstreamDtMtx   = &sync.Mutex{}
 	// JiraDataSource - constant
-	JiraDataSource = &models.DataSource{Name: "Jira", Slug: "jira"}
+	JiraDataSource = &models.DataSource{Name: "Jira", Slug: "jira", Model: "issues"}
 	gJiraMetaData  = &models.MetaData{BackendName: "jira", BackendVersion: JiraBackendVersion}
 	gRoleToType    = map[string]string{
 		"issue_creator":        "jira_issue_created",
