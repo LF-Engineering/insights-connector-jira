@@ -11,7 +11,7 @@ import (
 
 	neturl "net/url"
 
-	"github.com/LF-Engineering/insights-datasource-jira/gen/models"
+	"github.com/LF-Engineering/insights-connector-jira/gen/models"
 	shared "github.com/LF-Engineering/insights-datasource-shared"
 	"github.com/go-openapi/strfmt"
 	jsoniter "github.com/json-iterator/go"

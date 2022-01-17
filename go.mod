@@ -1,4 +1,4 @@
-module github.com/LF-Engineering/insights-datasource-jira
+module github.com/LF-Engineering/insights-connector-jira
 
 go 1.15
 

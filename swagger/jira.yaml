@@ -29,7 +29,7 @@ definitions:
     properties:
       BackendName:
         type: string
-        example: insights-datasource-jira
+        example: insights-connector-jira
       BackendVersion:
         type: string
         example: v0.1.0
@@ -169,7 +169,7 @@ definitions:
         $ref: "#/definitions/Issue"
   Data:
     type: object
-    description: this is the final output of insights-datasource-jira, data source will output packs up to some fixed size, like 500 events pack at once
+    description: this is the final output of insights-connector-jira, data source will output packs up to some fixed size, like 500 events pack at once
     properties:
       DataSource:
         type: object
