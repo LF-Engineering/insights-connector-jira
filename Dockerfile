@@ -6,7 +6,7 @@ ENV JIRA_USER='<JIRA-USER>'
 ENV JIRA_TOKEN='<JIRA-TOKEN>'
 ENV ES_URL='<ES-URL>'
 ENV STAGE='<STAGE>'
-RUN apk update && apk add git
+RUN apk update
 RUN apk add --no-cache bash
 RUN ls -ltra
 COPY jira ./

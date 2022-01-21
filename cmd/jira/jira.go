@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -13,9 +14,10 @@ import (
 
 	"github.com/LF-Engineering/insights-connector-jira/gen/models"
 	shared "github.com/LF-Engineering/insights-datasource-shared"
+	elastic "github.com/LF-Engineering/insights-datasource-shared/elastic"
+	logjob "github.com/LF-Engineering/insights-datasource-shared/ingestjob"
 	"github.com/go-openapi/strfmt"
 	jsoniter "github.com/json-iterator/go"
-	// jsoniter "github.com/json-iterator/go"
 )
 
 const (
@@ -45,6 +47,12 @@ const (
 	JiraRichAuthorField = "reporter"
 	// JiraDefaultPageSize - API page size
 	JiraDefaultPageSize = 500
+	// InProgress status
+	InProgress = "in_progress"
+	// Failed status
+	Failed = "failed"
+	// Success status
+	Success = "success"
 )
 
 var (
@@ -85,6 +93,7 @@ type DSJira struct {
 	FlagUser     *string
 	FlagToken    *string
 	FlagPageSize *int
+	Logger       logjob.Logger
 }
 
 // JiraField - informatin about fields present in issues
@@ -95,11 +104,48 @@ type JiraField struct {
 }
 
 // AddFlags - add Jira specific flags
-func (j *DSJira) AddFlags() {
+func (j *DSJira) AddFlags(ctx *shared.Ctx) {
 	j.FlagURL = flag.String("jira-url", "", "Jira URL, for example https://jira.onap.org")
 	j.FlagPageSize = flag.Int("jira-page-size", JiraDefaultPageSize, fmt.Sprintf("Max API page size, defaults to JiraDefaultPageSize (%d)", JiraDefaultPageSize))
 	j.FlagUser = flag.String("jira-user", "", "User: if user is provided then we assume that we don't have base64 encoded user:token yet")
 	j.FlagToken = flag.String("jira-token", "", "Token: if user is not specified we assume that token already contains \"<username>:<your-api-token>\"")
+	j.AddLogger(ctx)
+}
+
+func (j *DSJira) AddLogger(ctx *shared.Ctx) {
+	client, err := elastic.NewClientProvider(&elastic.Params{
+		URL:      os.Getenv("ELASTIC_LOG_URL"),
+		Password: os.Getenv("ELASTIC_LOG_PASSWORD"),
+		Username: os.Getenv("ELASTIC_LOG_USER"),
+	})
+	if err != nil {
+		shared.Printf("AddLogger error: %+v", err)
+		return
+	}
+
+	logProvider, err := logjob.NewLogger(client, os.Getenv("STAGE"))
+	if err != nil {
+		shared.Printf("AddLogger error: %+v", err)
+		return
+	}
+
+	j.Logger = *logProvider
+}
+
+func (j *DSJira) WriteLog(ctx *shared.Ctx, status, message string) {
+	_ = j.Logger.Write(&logjob.Log{
+		Connector: JiraDataSource.Name,
+		Configuration: []map[string]string{
+			{
+				"REPO_URL":    j.URL,
+				"ES_URL":      ctx.ESURL,
+				"ProjectSlug": ctx.Project,
+			}},
+		Status:    status,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Message:   message,
+	})
 }
 
 // ParseArgs - parse jira specific environment variables
@@ -185,7 +231,7 @@ func (j *DSJira) Endpoint(ctx *shared.Ctx) string {
 func (j *DSJira) Init(ctx *shared.Ctx) (err error) {
 	shared.NoSSLVerify()
 	ctx.InitEnv("Jira")
-	j.AddFlags()
+	j.AddFlags(ctx)
 	ctx.Init()
 	err = j.ParseArgs(ctx)
 	if err != nil {
@@ -1518,9 +1564,17 @@ func main() {
 		shared.Printf("Error: %+v\n", err)
 		return
 	}
+	// Update status to in progress in log cluster
+	jira.WriteLog(&ctx, logjob.InProgress, "")
+
 	err = jira.Sync(&ctx)
 	if err != nil {
 		shared.Printf("Error: %+v\n", err)
+		// Update status to failed in log cluster
+		jira.WriteLog(&ctx, logjob.Failed, "")
 		return
 	}
+
+	// Update status to done in log cluster
+	jira.WriteLog(&ctx, logjob.Done, "")
 }
