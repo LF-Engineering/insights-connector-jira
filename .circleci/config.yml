@@ -2,16 +2,13 @@ version: 2.1
 jobs:
   build:
     docker:
-      - image: circleci/golang:1.13-stretch-node
+      - image: circleci/golang:1.15-stretch-node
     working_directory: /go/src/github.com/LF-Engineering/insights-connector-jira
     steps:
       - checkout
       - run:
-          name: setup GITHUB token for private repositories
-          command: git config --global url."https://${GITHUB_TOKEN}:x-oauth-basic@github.com/LF-Engineering".insteadOf "https://github.com/LF-Engineering"
-      - run:
           name: Build Executable
-          command: make jira
+          command: make clean setup_swagger swagger jira
       - setup_remote_docker
       - persist_to_workspace:
           root: ./
@@ -63,7 +60,6 @@ jobs:
       AWS_ACCESS_KEY_ID_ENV_VAR: AWS_ACCESS_KEY_ID_DEV
       AWS_SECRET_ACCESS_KEY_ENV_VAR: AWS_SECRET_ACCESS_KEY_DEV
       AWS_ACCOUNT_ID_ENV_VAR: "395594542180"
-      GITHUB_TOKEN: GITHUB_TOKEN
       STAGE: dev
       TAG: latest
 
@@ -74,7 +70,6 @@ jobs:
       AWS_SECRET_ACCESS_KEY_ENV_VAR: AWS_SECRET_ACCESS_KEY_TEST
       AWS_ACCOUNT_ID_ENV_VAR: AWS_ACCOUNT_ID_TEST
       AWS_REGION_ENV_VAR: AWS_REGION_TEST
-      GITHUB_TOKEN: GITHUB_TOKEN
       STAGE: test
       TAG: test
 
@@ -85,7 +80,6 @@ jobs:
       AWS_SECRET_ACCESS_KEY_ENV_VAR: AWS_SECRET_ACCESS_KEY_PROD
       AWS_ACCOUNT_ID_ENV_VAR: AWS_ACCOUNT_ID_PROD
       AWS_REGION_ENV_VAR: AWS_REGION_PROD
-      GITHUB_TOKEN: GITHUB_TOKEN
       STAGE: prod
       TAG: stable
 

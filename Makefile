@@ -1,4 +1,5 @@
 GO_BIN_FILES=cmd/jira/jira.go 
+
 #for race CGO_ENABLED=1
 # GO_ENV=CGO_ENABLED=1
 GO_ENV=CGO_ENABLED=0
@@ -24,6 +25,8 @@ imports: ${GO_BIN_FILES}
 errcheck: ${GO_BIN_FILES}
 	${GO_ERRCHECK} ${GO_BIN_FILES}
 check: fmt lint imports vet errcheck
+setup_swagger:
+	go install github.com/go-swagger/go-swagger/cmd/swagger
 swagger: clean_swagger
 	swagger -q generate model -t gen -f swagger/jira.yaml
 clean_swagger:
