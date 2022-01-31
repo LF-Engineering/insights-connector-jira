@@ -6,8 +6,11 @@ ENV JIRA_USER='<JIRA-USER>'
 ENV JIRA_TOKEN='<JIRA-TOKEN>'
 ENV ES_URL='<ES-URL>'
 ENV STAGE='<STAGE>'
-RUN apk update
-RUN apk add --no-cache bash
+ENV ELASTIC_LOG_URL='<ELASTIC-LOG-URL>'
+ENV ELASTIC_LOG_USER='<ELASTIC-LOG-USER>'
+ENV ELASTIC_LOG_PASSWORD='<ELASTIC-LOG-PASSWORD>'
+# RUN apk update
+RUN apk update && apk add --no-cache bash
 RUN ls -ltra
 COPY jira ./
-CMD ./jira --jira-url=${JIRA_URL} --jira-es-url="${ES_URL}" --jira-user="${JIRA_USER}" --jira-token="${JIRA_TOKEN}}" $*
+CMD ./jira --jira-url=${JIRA_URL} --jira-es-url="${ES_URL}" --jira-user="${JIRA_USER}" --jira-token="${JIRA_TOKEN}}"
