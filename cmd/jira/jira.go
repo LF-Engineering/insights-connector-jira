@@ -15,7 +15,7 @@ import (
 	"github.com/LF-Engineering/insights-connector-jira/gen/models"
 	shared "github.com/LF-Engineering/insights-datasource-shared"
 	elastic "github.com/LF-Engineering/insights-datasource-shared/elastic"
-	logjob "github.com/LF-Engineering/insights-datasource-shared/ingestjob"
+	logger "github.com/LF-Engineering/insights-datasource-shared/ingestjob"
 	"github.com/go-openapi/strfmt"
 	jsoniter "github.com/json-iterator/go"
 )
@@ -47,6 +47,10 @@ const (
 	JiraRichAuthorField = "reporter"
 	// JiraDefaultPageSize - API page size
 	JiraDefaultPageSize = 500
+	// JiraDefaultStream - Stream To Publish reviews
+	JiraDefaultStream = "PUT-S3-jira"
+	// JiraConnector ...
+	JiraConnector = "jira-connector"
 	// InProgress status
 	InProgress = "in_progress"
 	// Failed status
@@ -83,6 +87,11 @@ var (
 	}
 )
 
+// Publisher - for streaming data to Kinesis
+type Publisher interface {
+	PushEvents(action, source, eventType, subEventType, env string, data []interface{}) error
+}
+
 // DSJira - DS implementation for Jira
 type DSJira struct {
 	URL          string // Jira URL, for example https://jira.onap.org
@@ -91,9 +100,13 @@ type DSJira struct {
 	PageSize     int    // Max API page size, defaults to JiraDefaultPageSize
 	FlagURL      *string
 	FlagUser     *string
+	FlagStream   *string
 	FlagToken    *string
 	FlagPageSize *int
-	Logger       logjob.Logger
+	// Publisher & stream
+	Publisher
+	Stream string // stream to publish the data
+	Logger logger.Logger
 }
 
 // JiraField - informatin about fields present in issues
@@ -103,12 +116,26 @@ type JiraField struct {
 	Custom bool   `json:"custom"`
 }
 
+// AddPublisher - sets Kinesis publisher
+func (j *DSJira) AddPublisher(publisher Publisher) {
+	j.Publisher = publisher
+}
+
+// PublisherPushEvents - this is a fake function to test publisher locally
+// FIXME: don't use when done implementing
+func (j *DSJira) PublisherPushEvents(ev, ori, src, cat, env string, v []interface{}) error {
+	data, err := jsoniter.Marshal(v)
+	shared.Printf("publish[ev=%s ori=%s src=%s cat=%s env=%s]: %d items: %+v -> %v\n", ev, ori, src, cat, env, len(v), string(data), err)
+	return nil
+}
+
 // AddFlags - add Jira specific flags
 func (j *DSJira) AddFlags(ctx *shared.Ctx) {
 	j.FlagURL = flag.String("jira-url", "", "Jira URL, for example https://jira.onap.org")
 	j.FlagPageSize = flag.Int("jira-page-size", JiraDefaultPageSize, fmt.Sprintf("Max API page size, defaults to JiraDefaultPageSize (%d)", JiraDefaultPageSize))
 	j.FlagUser = flag.String("jira-user", "", "User: if user is provided then we assume that we don't have base64 encoded user:token yet")
 	j.FlagToken = flag.String("jira-token", "", "Token: if user is not specified we assume that token already contains \"<username>:<your-api-token>\"")
+	j.FlagStream = flag.String("jira-stream", JiraDefaultStream, "jira kinesis stream name, for example PUT-S3-jira")
 	j.AddLogger(ctx)
 }
 
@@ -123,7 +150,7 @@ func (j *DSJira) AddLogger(ctx *shared.Ctx) {
 		return
 	}
 
-	logProvider, err := logjob.NewLogger(client, os.Getenv("STAGE"))
+	logProvider, err := logger.NewLogger(client, os.Getenv("STAGE"))
 	if err != nil {
 		shared.Printf("AddLogger error: %+v", err)
 		return
@@ -132,8 +159,8 @@ func (j *DSJira) AddLogger(ctx *shared.Ctx) {
 	j.Logger = *logProvider
 }
 
-func (j *DSJira) WriteLog(ctx *shared.Ctx, status, message string) {
-	_ = j.Logger.Write(&logjob.Log{
+func (j *DSJira) WriteLog(ctx *shared.Ctx, timestamp time.Time, status, message string) {
+	_ = j.Logger.Write(&logger.Log{
 		Connector: JiraDataSource.Name,
 		Configuration: []map[string]string{
 			{
@@ -142,8 +169,7 @@ func (j *DSJira) WriteLog(ctx *shared.Ctx, status, message string) {
 				"ProjectSlug": ctx.Project,
 			}},
 		Status:    status,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		CreatedAt: timestamp,
 		Message:   message,
 	})
 }
@@ -201,19 +227,27 @@ func (j *DSJira) ParseArgs(ctx *shared.Ctx) (err error) {
 		j.Token = base64.StdEncoding.EncodeToString([]byte(j.User + ":" + j.Token))
 		shared.AddRedacted(j.Token, false)
 	}
+
+	// jira Kinesis stream
+	j.Stream = JiraDefaultStream
+	if shared.FlagPassed(ctx, "stream") {
+		j.Stream = *j.FlagStream
+	}
+	if ctx.EnvSet("STREAM") {
+		j.Stream = ctx.Env("STREAM")
+	}
+
 	// NOTE: don't forget this
-	gJiraMetaData.Project = ctx.Project
-	gJiraMetaData.Tags = ctx.Tags
+	// gJiraMetaData.Project = ctx.Project
+	// gJiraMetaData.Tags = ctx.Tags
 	return
 }
 
 // Validate - is current DS configuration OK?
 func (j *DSJira) Validate() (err error) {
-	if strings.HasSuffix(j.URL, "/") {
-		j.URL = j.URL[:len(j.URL)-1]
-	}
+	j.URL = strings.TrimSuffix(j.URL, "/")
 	if j.URL == "" {
-		err = fmt.Errorf("Jira URL must be set")
+		err = fmt.Errorf("jira URL must be set")
 	}
 	return
 }
@@ -228,11 +262,12 @@ func (j *DSJira) Endpoint(ctx *shared.Ctx) string {
 }
 
 // Init - initialize Jira data source
-func (j *DSJira) Init(ctx *shared.Ctx) (err error) {
+func (j *DSJira) InitJira(ctx *shared.Ctx) (err error) {
 	shared.NoSSLVerify()
 	ctx.InitEnv("Jira")
 	j.AddFlags(ctx)
 	ctx.Init()
+
 	err = j.ParseArgs(ctx)
 	if err != nil {
 		return
@@ -245,6 +280,7 @@ func (j *DSJira) Init(ctx *shared.Ctx) (err error) {
 		m := &models.Data{}
 		shared.Printf("Jira: %+v\nshared context: %s\nModel: %+v", j, ctx.Info(), m)
 	}
+
 	return
 }
 
@@ -289,7 +325,7 @@ func (j *DSJira) EnrichComments(ctx *shared.Ctx, comments []interface{}, item ma
 	for _, comment := range comments {
 		richComment := make(map[string]interface{})
 		for _, field := range shared.RawFields {
-			v, _ := item[field]
+			v := item[field]
 			richComment[field] = v
 		}
 		fields := []string{"project_id", "project_key", "project_name", "issue_type", "issue_description"}
@@ -353,7 +389,7 @@ func (j *DSJira) EnrichComments(ctx *shared.Ctx, comments []interface{}, item ma
 			iComment, _ := comment.(map[string]interface{})
 			identity := j.GetRoleIdentity(ctx, iComment, role)
 			if identity != nil {
-				dt, _ := dtMap[role]
+				dt := dtMap[role]
 				identity["dt"] = dt
 				roleIdents = append(roleIdents, identity)
 			}
@@ -374,7 +410,7 @@ func (j *DSJira) EnrichItem(ctx *shared.Ctx, item map[string]interface{}, roles 
 	// copy RawFields
 	rich = make(map[string]interface{})
 	for _, field := range shared.RawFields {
-		v, _ := item[field]
+		v := item[field]
 		rich[field] = v
 	}
 	issue, ok := item["data"].(map[string]interface{})
@@ -906,7 +942,7 @@ func (j *DSJira) JiraEnrichItems(ctx *shared.Ctx, thrN int, items []interface{},
 		// NOTE: never refer to _source - we no longer use ES
 		doc, ok := item.(map[string]interface{})
 		if !ok {
-			e = fmt.Errorf("Failed to parse document %+v", doc)
+			e = fmt.Errorf("failed to parse document %+v", doc)
 			return
 		}
 		var rich map[string]interface{}
@@ -1127,6 +1163,7 @@ func (j *DSJira) ProcessIssue(ctx *shared.Ctx, allIssues, allDocs *[]interface{}
 				false,                               // skip in dry-run mode
 			)
 			if e != nil {
+
 				return
 			}
 			comments, ok := res.(map[string]interface{})["comments"].([]interface{})
@@ -1143,6 +1180,7 @@ func (j *DSJira) ProcessIssue(ctx *shared.Ctx, allIssues, allDocs *[]interface{}
 			if thrN > 1 {
 				mtx.Lock()
 			}
+
 			issueComments, ok := issue.(map[string]interface{})["comments_data"].([]interface{})
 			if !ok {
 				issue.(map[string]interface{})["comments_data"] = []interface{}{}
@@ -1559,22 +1597,22 @@ func main() {
 		ctx  shared.Ctx
 		jira DSJira
 	)
-	err := jira.Init(&ctx)
+	err := jira.InitJira(&ctx)
 	if err != nil {
 		shared.Printf("Error: %+v\n", err)
 		return
 	}
-	// Update status to in progress in log cluster
-	jira.WriteLog(&ctx, logjob.InProgress, "")
-
+	// Update status to in progress in log clusterx
+	timestamp := time.Now()
+	jira.WriteLog(&ctx, timestamp, logger.InProgress, "")
 	err = jira.Sync(&ctx)
 	if err != nil {
 		shared.Printf("Error: %+v\n", err)
 		// Update status to failed in log cluster
-		jira.WriteLog(&ctx, logjob.Failed, "")
+		jira.WriteLog(&ctx, timestamp, logger.Failed, "")
 		return
 	}
 
 	// Update status to done in log cluster
-	jira.WriteLog(&ctx, logjob.Done, "")
+	jira.WriteLog(&ctx, timestamp, logger.Done, "")
 }
