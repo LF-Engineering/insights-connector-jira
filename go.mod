@@ -4,7 +4,10 @@ go 1.15
 
 require (
 	github.com/LF-Engineering/insights-datasource-shared v1.2.1
+	github.com/LF-Engineering/lfx-event-schema v0.1.2
 	github.com/asaskevich/govalidator v0.0.0-20210307081110-f21760c49a8d // indirect
+	github.com/aws/aws-lambda-go v1.28.0
+	github.com/aws/aws-sdk-go v1.42.24
 	github.com/elastic/go-elasticsearch/v8 v8.0.0-20210817124755-97fca1753fd7 // indirect
 	github.com/go-openapi/errors v0.20.1
 	github.com/go-openapi/loads v0.20.3 // indirect
