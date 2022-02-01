@@ -48,10 +48,10 @@ func HandleRequest(ctx context.Context) {
 						Name:  aws.String("ES_URL"),
 						Value: aws.String(os.Getenv("ES_URL")),
 					},
-				},
-				&ecs.KeyValuePair{
-					Name:  aws.String("STAGE"),
-					Value: aws.String(os.Getenv("STAGE")),
+					&ecs.KeyValuePair{
+						Name:  aws.String("STAGE"),
+						Value: aws.String(os.Getenv("STAGE")),
+					},
 				},
 			},
 			}},
