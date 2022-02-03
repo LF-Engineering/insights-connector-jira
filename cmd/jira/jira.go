@@ -16,6 +16,9 @@ import (
 	"github.com/LF-Engineering/lfx-event-schema/service/insights"
 	"github.com/LF-Engineering/lfx-event-schema/service/insights/jira"
 	"github.com/LF-Engineering/lfx-event-schema/service/user"
+	"github.com/LF-Engineering/lfx-event-schema/utils/datalake"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 
 	shared "github.com/LF-Engineering/insights-datasource-shared"
 	elastic "github.com/LF-Engineering/insights-datasource-shared/elastic"
@@ -82,13 +85,13 @@ var (
 	gMaxUpstreamDtMtx   = &sync.Mutex{}
 
 	// gJiraMetaData  = &models.MetaData{BackendName: "jira", BackendVersion: JiraBackendVersion}
-	gRoleToType = map[string]string{
-		"issue_creator":        "jira_issue_created",
-		"issue_assignee":       "jira_issue_assignee_added",
-		"issue_reporter":       "jira_issue_reporter_added",
-		"comment_author":       "jira_comment_created",
-		"comment_updateAuthor": "jira_comment_updated",
-	}
+	// gRoleToType = map[string]string{
+	// 	"issue_creator":        "jira_issue_created",
+	// 	"issue_assignee":       "jira_issue_assignee_added",
+	// 	"issue_reporter":       "jira_issue_reporter_added",
+	// 	"comment_author":       "jira_comment_created",
+	// 	"comment_updateAuthor": "jira_comment_updated",
+	// }
 )
 
 // Publisher - for streaming data to Kinesis
@@ -253,43 +256,64 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 
 	source := JiraDataSource
 	for _, iDoc := range docs {
+		var (
+			labels    []string
+			issueBody *string
+		)
 		doc, _ := iDoc.(map[string]interface{})
-		var issueBody *string
-		issueID, userID, issueCommentID := "", "", ""
 		nComments := 0
-		createdOn, _ := doc["created_at"].(time.Time)
+		createdOn, _ := doc["creation_date"].(time.Time)
+		// shared.Printf("createdOn: %+v for %+v\n", createdOn, iDoc)
+		updatedOn, _ := doc["updated"].(time.Time)
+		createdTz := ""
+		// docUUID, _ := doc["uuid"].(string)
+		//issueID, _ := doc["id"].(string)
+		watchers, _ := doc["watchers"].(int)
+		// isClosed, _ := doc["is_closed"].(bool)
 		jiraProjectID, _ := doc["project_id"].(string)
-		updatedOn := j.ItemUpdatedOn(doc)
-
-		title, _ := doc["summary"].(string)
 		projectKey, _ := doc["project_key"].(string)
 		projectName, _ := doc["project_name"].(string)
+		sIssueBody, _ := doc["main_description"].(string)
+		if sIssueBody != "" {
+			issueBody = &sIssueBody
+		}
+		//issueURL, _ := doc["url"].(string)
+		title, _ := doc["summary"].(string)
+		iLabels, okLabels := doc["labels"].([]interface{})
+		if okLabels {
+			for _, iLabel := range iLabels {
+				label, _ := iLabel.(string)
+				if label != "" {
+					labels = append(labels, label)
+				}
+			}
+		}
+
 		projectID, err := jira.GenerateJiraProjectID(j.URL, jiraProjectID)
 		if err != nil {
 			shared.Printf("GenerateJiraProjectID(%s,%s): %+v for %+v\n", jiraProjectID, j.URL, err, doc)
 			return nil, err
 		}
 
-		sIssueBody, _ := doc["main_description"].(string)
+		sIssueBody, _ = doc["main_description"].(string)
 		if sIssueBody != "" {
 			issueBody = &sIssueBody
 		}
 
-		watchers, _ := doc["watchers"].(int)
+		if createdTz == "" {
+			createdTz = "UTC"
+		}
 		//issueURL, _ := doc["url"].(string)
 
-		issueKey := doc["issue_id"].(string)
-
-		fIID, _ := doc["issue_id"].(float64)
+		issueKey := doc["key"].(string)
+		fIID, _ := doc["id"].(float64)
 		sIID := fmt.Sprintf("%.0f", fIID)
-		issueID, err = jira.GenerateJiraIssueID(projectID, sIID)
+		issueID, err := jira.GenerateJiraIssueID(projectID, sIID)
 		if err != nil {
 			shared.Printf("GenerateJiraIssueID(%s,%s): %+v for %+v\n", projectID, sIID, err, doc)
 			return nil, err
 		}
 
-		labels, _ := doc["labels"].([]string)
-		title, _ = doc["summary"].(string)
 		url, _ := doc["url"].(string)
 		state, _ := doc["state"].(string)
 
@@ -313,7 +337,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 				username, _ := role["username"].(string)
 				email, _ := role["email"].(string)
 				avatarURL, _ := role["avatar_url"].(string)
-				userID, err = user.GenerateIdentity(&source, &email, &name, &username)
+				userID, err := user.GenerateIdentity(&source, &email, &name, &username)
 				if err != nil {
 					shared.Printf("GenerateIdentity(%s,%s,%s,%s): %+v for %+v\n", source, email, name, username, err, doc)
 					return nil, err
@@ -368,8 +392,8 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 					email, _ := role["email"].(string)
 					avatarURL, _ := role["avatar_url"].(string)
 					// No identity data postprocessing in V2
-					// name, username = shared.PostprocessNameUsername(name, username, email)
-					userID, err = user.GenerateIdentity(&source, &email, &name, &username)
+					name, username = shared.PostprocessNameUsername(name, username, email)
+					userID, err := user.GenerateIdentity(&source, &email, &name, &username)
 					if err != nil {
 						shared.Printf("GenerateIdentity(%s,%s,%s,%s): %+v for %+v\n", source, email, name, username, err, doc)
 						return nil, err
@@ -389,7 +413,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 					}
 					issueContributors = append(issueContributors, contributor)
 					commentSID := sCommentID
-					issueCommentID, err = jira.GenerateJiraCommentID(projectID, commentSID)
+					issueCommentID, err := jira.GenerateJiraCommentID(projectID, commentSID)
 					if err != nil {
 						shared.Printf("GenerateJiraCommentID(%s,%s): %+v for %+v\n", projectID, commentSID, err, doc)
 						return nil, err
@@ -479,7 +503,6 @@ func (j *DSJira) OutputDocs(ctx *shared.Ctx, items []interface{}, docs *[]interf
 		shared.Printf("output processing(%d/%d/%v)\n", len(items), len(*docs), final)
 		var (
 			issuesData map[string][]interface{}
-			pullsData  map[string][]interface{}
 			jsonBytes  []byte
 			err        error
 		)
@@ -487,25 +510,25 @@ func (j *DSJira) OutputDocs(ctx *shared.Ctx, items []interface{}, docs *[]interf
 		if err == nil {
 			if j.Publisher != nil {
 				insightsStr := "insights"
-				pullsStr := "issues"
+				issuesStr := "issues"
 				envStr := os.Getenv("STAGE")
 				for k, v := range issuesData {
 					switch k {
 					case "created":
 						ev, _ := v[0].(jira.IssueCreatedEvent)
-						err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, pullsStr, envStr, v)
+						err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, issuesStr, envStr, v)
 					case "updated":
 						ev, _ := v[0].(jira.IssueUpdatedEvent)
-						err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, pullsStr, envStr, v)
+						err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, issuesStr, envStr, v)
 					case "comment_added":
 						ev, _ := v[0].(jira.IssueCommentAddedEvent)
-						err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, pullsStr, envStr, v)
+						err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, issuesStr, envStr, v)
 					case "comment_edited":
 						ev, _ := v[0].(jira.IssueCommentEditedEvent)
-						err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, pullsStr, envStr, v)
+						err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, issuesStr, envStr, v)
 					case "comment_deleted":
 						ev, _ := v[0].(jira.IssueCommentDeletedEvent)
-						err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, pullsStr, envStr, v)
+						err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, issuesStr, envStr, v)
 
 					default:
 						err = fmt.Errorf("unknown jira issue event type '%s'", k)
@@ -515,7 +538,7 @@ func (j *DSJira) OutputDocs(ctx *shared.Ctx, items []interface{}, docs *[]interf
 					}
 				}
 			} else {
-				jsonBytes, err = jsoniter.Marshal(pullsData)
+				jsonBytes, err = jsoniter.Marshal(issuesData)
 			}
 		}
 		if err != nil {
@@ -523,7 +546,7 @@ func (j *DSJira) OutputDocs(ctx *shared.Ctx, items []interface{}, docs *[]interf
 			return
 		}
 		if j.Publisher == nil {
-			shared.Printf("%s\n", string(jsonBytes))
+			shared.Printf("publisher: %s\n", string(jsonBytes))
 		}
 		*docs = []interface{}{}
 		gMaxUpstreamDtMtx.Lock()
@@ -655,6 +678,7 @@ func (j *DSJira) Endpoint(ctx *shared.Ctx) string {
 
 // Init - initialize Jira data source
 func (j *DSJira) Init(ctx *shared.Ctx) (err error) {
+
 	shared.NoSSLVerify()
 	ctx.InitEnv("Jira")
 	j.AddFlags(ctx)
@@ -664,6 +688,7 @@ func (j *DSJira) Init(ctx *shared.Ctx) (err error) {
 	if err != nil {
 		return
 	}
+
 	err = j.Validate()
 	if err != nil {
 		return err
@@ -671,6 +696,21 @@ func (j *DSJira) Init(ctx *shared.Ctx) (err error) {
 
 	if ctx.Debug > 1 {
 		shared.Printf("Jira: %+v\nshared context: %s\nModel: %+v", j, ctx.Info())
+	}
+
+	if ctx.Debug > 0 {
+		shared.Printf("stream: '%s'\n", j.Stream)
+	}
+
+	if j.Stream != "" {
+		sess, err := session.NewSession()
+		if err != nil {
+			return err
+		}
+		s3Client := s3.New(sess)
+		objectStore := datalake.NewS3ObjectStore(s3Client)
+		datalakeClient := datalake.NewStoreClient(&objectStore)
+		j.AddPublisher(&datalakeClient)
 	}
 
 	return
@@ -722,7 +762,7 @@ func (j *DSJira) EnrichComments(ctx *shared.Ctx, comments []interface{}, item ma
 	for _, comment := range comments {
 		richComment := make(map[string]interface{})
 		for _, field := range shared.RawFields {
-			v := item[field]
+			v, _ := item[field]
 			richComment[field] = v
 		}
 		fields := []string{"project_id", "project_key", "project_name", "issue_type", "issue_description"}
@@ -1339,11 +1379,12 @@ func (j *DSJira) ProcessIssue(ctx *shared.Ctx, allIssues, allDocs *[]interface{}
 				mtx.Lock()
 			}
 
+			// issueComments, ok := issue.(map[string]interface{})["comments_data"].([]interface{})
+			// if !ok {
+			// 	issue.(map[string]interface{})["comments_data"] = []interface{}{}
+			// }
+
 			issueComments, ok := issue.(map[string]interface{})["comments_data"].([]interface{})
-			if !ok {
-				issue.(map[string]interface{})["comments_data"] = []interface{}{}
-			}
-			issueComments, _ = issue.(map[string]interface{})["comments_data"].([]interface{})
 			if !ok {
 				issueComments = comments
 			} else {
@@ -1381,8 +1422,10 @@ func (j *DSJira) ProcessIssue(ctx *shared.Ctx, allIssues, allDocs *[]interface{}
 		if ctx.Debug > 1 {
 			shared.Printf("processed %d comments\n", startAt)
 		}
+
 		return
 	}
+
 	var ch chan error
 	if thrN > 1 {
 		ch = make(chan error)
@@ -1406,14 +1449,17 @@ func (j *DSJira) ProcessIssue(ctx *shared.Ctx, allIssues, allDocs *[]interface{}
 		err = fmt.Errorf("unable to unmarshal fields from issue %+v", shared.DumpKeys(issue))
 		return
 	}
+
 	if ctx.Debug > 1 {
 		shared.Printf("before map custom: %+v\n", shared.DumpPreview(issueFields, 100))
 	}
+
 	type mapping struct {
 		ID    string
 		Name  string
 		Value interface{}
 	}
+
 	if JiraMapCustomFields {
 		m := make(map[string]mapping)
 		for k, v := range issueFields {
@@ -1431,14 +1477,18 @@ func (j *DSJira) ProcessIssue(ctx *shared.Ctx, allIssues, allDocs *[]interface{}
 			issueFields[k] = v
 		}
 	}
+
 	if ctx.Debug > 1 {
 		shared.Printf("after map custom: %+v\n", shared.DumpPreview(issueFields, 100))
 	}
+
 	// Extra fields
 	if thrN > 1 {
 		mtx.Lock()
 	}
+
 	esItem := j.AddMetadata(ctx, issue)
+
 	// Seems like it doesn't make sense, because we just added those custom fields
 	if JiraDropCustomFields {
 		for k, v := range issueFields {
@@ -1504,25 +1554,49 @@ func (j *DSJira) ProcessIssue(ctx *shared.Ctx, allIssues, allDocs *[]interface{}
 	return
 }
 
+// ItemNullableDate - return date value for a given field name, can be null
+func (j *DSJira) ItemNullableDate(item interface{}, field string) *time.Time {
+	iWhen, ok := shared.Dig(item, []string{field}, false, true)
+	if !ok || iWhen == nil {
+		return nil
+	}
+	sWhen, ok := iWhen.(string)
+	if !ok {
+		// shared.Printf("ItemNullableDate: incorrect date (non string): %v,%T\n", iWhen, iWhen)
+		return nil
+	}
+	when, err := shared.TimeParseES(sWhen)
+	if err != nil {
+		// shared.Printf("ItemNullableDate: incorrect date (cannot parse): %s,%v\n", sWhen, err)
+		return nil
+	}
+
+	return &when
+}
+
 // Sync - sync Jira data source
 func (j *DSJira) Sync(ctx *shared.Ctx) (err error) {
 	thrN := shared.GetThreadsNum(ctx)
 	if ctx.DateFrom != nil {
 		shared.Printf("%s fetching from %v (%d threads)\n", j.Endpoint(ctx), ctx.DateFrom, thrN)
 	}
+
 	if ctx.DateFrom == nil {
 		ctx.DateFrom = shared.GetLastUpdate(ctx, j.Endpoint(ctx))
 		if ctx.DateFrom != nil {
 			shared.Printf("%s resuming from %v (%d threads)\n", j.Endpoint(ctx), ctx.DateFrom, thrN)
 		}
 	}
+
 	if ctx.DateTo != nil {
 		shared.Printf("%s fetching till %v (%d threads)\n", j.Endpoint(ctx), ctx.DateTo, thrN)
 	}
+
 	// NOTE: Non-generic starts here
 	var customFields map[string]JiraField
 	fieldsFetched := false
 	var chF chan error
+
 	getFields := func(c chan error) (e error) {
 		defer func() {
 			if c != nil {
@@ -1535,6 +1609,7 @@ func (j *DSJira) Sync(ctx *shared.Ctx) (err error) {
 		customFields, e = j.GetFields(ctx)
 		return
 	}
+
 	if thrN > 1 {
 		chF = make(chan error)
 		go func() {
@@ -1553,11 +1628,13 @@ func (j *DSJira) Sync(ctx *shared.Ctx) (err error) {
 		from time.Time
 		to   *time.Time
 	)
+
 	if ctx.DateFrom != nil {
 		from = *ctx.DateFrom
 	} else {
 		from = shared.DefaultDateFrom
 	}
+
 	to = ctx.DateTo
 	url := j.URL + JiraAPIRoot + JiraAPISearch
 	startAt := int64(0)
