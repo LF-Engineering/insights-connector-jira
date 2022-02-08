@@ -260,8 +260,8 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 			labels    []string
 			issueBody *string
 		)
-		doc, _ := iDoc.(map[string]interface{})
 		nComments := 0
+		doc, _ := iDoc.(map[string]interface{})
 		createdOn, _ := doc["creation_date"].(time.Time)
 		// shared.Printf("createdOn: %+v for %+v\n", createdOn, iDoc)
 		updatedOn, _ := doc["updated"].(time.Time)
@@ -269,7 +269,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 		// docUUID, _ := doc["uuid"].(string)
 		//issueID, _ := doc["id"].(string)
 		watchers, _ := doc["watchers"].(int)
-		// isClosed, _ := doc["is_closed"].(bool)
+		isClosed, _ := doc["is_closed"].(bool)
 		jiraProjectID, _ := doc["project_id"].(string)
 		projectKey, _ := doc["project_key"].(string)
 		projectName, _ := doc["project_name"].(string)
@@ -303,11 +303,10 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 		if createdTz == "" {
 			createdTz = "UTC"
 		}
-		//issueURL, _ := doc["url"].(string)
 
-		issueKey := doc["key"].(string)
-		fIID, _ := doc["id"].(float64)
-		sIID := fmt.Sprintf("%.0f", fIID)
+		issueKey, _ := doc["key"].(string)
+		sIID, _ := doc["id"].(string)
+
 		issueID, err := jira.GenerateJiraIssueID(projectID, sIID)
 		if err != nil {
 			shared.Printf("GenerateJiraIssueID(%s,%s): %+v for %+v\n", projectID, sIID, err, doc)
@@ -315,7 +314,10 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 		}
 
 		url, _ := doc["url"].(string)
-		state, _ := doc["state"].(string)
+		state := insights.IssueOpen
+		if isClosed {
+			state = insights.IssueClosed
+		}
 
 		project := jira.Project{
 			ID:          projectID,
@@ -363,40 +365,36 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 		}
 
 		// Comments start
-		commentsAry, okComments := doc["comments_array"].([]interface{})
+		comments, okComments := doc["issue_comments"].([]map[string]interface{})
 		if okComments {
-			for _, iComment := range commentsAry {
-				comment, okComment := iComment.(map[string]interface{})
-				if !okComment || comment == nil {
-					continue
-				}
-				roles, okRoles := comment["roles"].([]map[string]interface{})
-				if !okRoles || len(roles) == 0 {
-					continue
-				}
-				sCommentBody, _ := comment["body"].(string)
-				sCommentURL, _ := comment["html_url"].(string)
-				commentCreatedOn, _ := comment["metadata__updated_on"].(time.Time)
-				commentID, _ := comment["issue_comment_id"].(int64)
-				sCommentID := fmt.Sprintf("%d", commentID)
-				if commentCreatedOn.After(updatedOn) {
-					updatedOn = commentCreatedOn
-				}
-				for _, role := range roles {
-					roleType, _ := role["role"].(string)
-					if roleType != "user_data" {
-						continue
+			for _, comment := range comments {
+				var (
+					commentBody *string
+					commentURL  *string
+				)
+				commentRoles, okCommentRoles := comment["roles"].([]map[string]interface{})
+				if okCommentRoles {
+					sCommentBody, _ := comment["body"].(string)
+					if sCommentBody != "" {
+						commentBody = &sCommentBody
 					}
-					name, _ := role["name"].(string)
-					username, _ := role["username"].(string)
-					email, _ := role["email"].(string)
-					avatarURL, _ := role["avatar_url"].(string)
-					// No identity data postprocessing in V2
-					name, username = shared.PostprocessNameUsername(name, username, email)
+				}
+
+				for _, roleData := range commentRoles {
+					name, _ := roleData["name"].(string)
+					username, _ := roleData["username"].(string)
+					email, _ := roleData["email"].(string)
+					avatarURL, _ := roleData["avatar_url"].(string)
 					userID, err := user.GenerateIdentity(&source, &email, &name, &username)
 					if err != nil {
 						shared.Printf("GenerateIdentity(%s,%s,%s,%s): %+v for %+v\n", source, email, name, username, err, doc)
 						return nil, err
+					}
+
+					commentCreatedOn, _ := comment["metadata__updated_on"].(time.Time)
+
+					if commentCreatedOn.After(updatedOn) {
+						updatedOn = commentCreatedOn
 					}
 					contributor := insights.Contributor{
 						Role:   insights.CommenterRole,
@@ -412,7 +410,11 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 						},
 					}
 					issueContributors = append(issueContributors, contributor)
-					commentSID := sCommentID
+					commentSID := comment["comment_id"].(string)
+					sCommentURL, _ := comment["comment_url"].(string)
+					if sCommentURL != "" {
+						commentURL = &sCommentURL
+					}
 					issueCommentID, err := jira.GenerateJiraCommentID(projectID, commentSID)
 					if err != nil {
 						shared.Printf("GenerateJiraCommentID(%s,%s): %+v for %+v\n", projectID, commentSID, err, doc)
@@ -422,8 +424,8 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 						ID:      issueCommentID,
 						IssueID: issueID,
 						Comment: insights.Comment{
-							Body:            sCommentBody,
-							CommentURL:      sCommentURL,
+							Body:            *commentBody,
+							CommentURL:      *commentURL,
 							SourceTimestamp: commentCreatedOn,
 							SyncTimestamp:   time.Now(),
 							CommentID:       commentSID,
@@ -438,8 +440,9 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 					} else {
 						ary = append(ary, issueComment)
 					}
+
 					data[key] = ary
-					nComments++
+
 				}
 			}
 		}
@@ -490,7 +493,6 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 			gMaxUpstreamDt = updatedOn
 		}
 		gMaxUpstreamDtMtx.Unlock()
-
 	}
 
 	return data, nil
@@ -506,6 +508,7 @@ func (j *DSJira) OutputDocs(ctx *shared.Ctx, items []interface{}, docs *[]interf
 			jsonBytes  []byte
 			err        error
 		)
+
 		issuesData, err = j.GetModelData(ctx, *docs)
 		if err == nil {
 			if j.Publisher != nil {
@@ -529,7 +532,6 @@ func (j *DSJira) OutputDocs(ctx *shared.Ctx, items []interface{}, docs *[]interf
 					case "comment_deleted":
 						ev, _ := v[0].(jira.IssueCommentDeletedEvent)
 						err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, issuesStr, envStr, v)
-
 					default:
 						err = fmt.Errorf("unknown jira issue event type '%s'", k)
 					}
@@ -678,7 +680,6 @@ func (j *DSJira) Endpoint(ctx *shared.Ctx) string {
 
 // Init - initialize Jira data source
 func (j *DSJira) Init(ctx *shared.Ctx) (err error) {
-
 	shared.NoSSLVerify()
 	ctx.InitEnv("Jira")
 	j.AddFlags(ctx)
@@ -821,6 +822,7 @@ func (j *DSJira) EnrichComments(ctx *shared.Ctx, comments []interface{}, item ma
 		}
 		richComment["id"] = fmt.Sprintf("%s_comment_%s", iid, comid)
 		richComment["type"] = "comment"
+		richComment["comment_url"], _ = shared.Dig(comment, []string{"self"}, true, false)
 		roleIdents := []map[string]interface{}{}
 		for _, role := range []string{"author", "updateAuthor"} {
 			iComment, _ := comment.(map[string]interface{})
@@ -832,11 +834,7 @@ func (j *DSJira) EnrichComments(ctx *shared.Ctx, comments []interface{}, item ma
 			}
 		}
 		richComment["roles"] = roleIdents
-		// fmt.Printf("comment roles: roleIdents: %+v\n", roleIdents)
-		// NOTE: From shared
 		richComment["metadata__enriched_on"] = time.Now()
-		// richComment[ProjectSlug] = ctx.ProjectSlug
-		// richComment["groups"] = ctx.Groups
 		richComments = append(richComments, richComment)
 	}
 
@@ -1161,6 +1159,7 @@ func (j *DSJira) JiraEnrichItems(ctx *shared.Ctx, thrN int, items []interface{},
 				mtx.Unlock()
 			}
 		}()
+
 		comms, ok := shared.Dig(doc, []string{"data", "comments_data"}, false, true)
 		if !ok {
 			return
@@ -1361,14 +1360,15 @@ func (j *DSJira) ProcessIssue(ctx *shared.Ctx, allIssues, allDocs *[]interface{}
 				false,                               // skip in dry-run mode
 			)
 			if e != nil {
-
 				return
 			}
+
 			comments, ok := res.(map[string]interface{})["comments"].([]interface{})
 			if !ok {
 				e = fmt.Errorf("unable to unmarshal comments from %+v", shared.DumpKeys(res))
 				return
 			}
+
 			if ctx.Debug > 1 {
 				nComments := len(comments)
 				if nComments > 0 {
@@ -1379,17 +1379,13 @@ func (j *DSJira) ProcessIssue(ctx *shared.Ctx, allIssues, allDocs *[]interface{}
 				mtx.Lock()
 			}
 
-			// issueComments, ok := issue.(map[string]interface{})["comments_data"].([]interface{})
-			// if !ok {
-			// 	issue.(map[string]interface{})["comments_data"] = []interface{}{}
-			// }
-
 			issueComments, ok := issue.(map[string]interface{})["comments_data"].([]interface{})
 			if !ok {
 				issueComments = comments
 			} else {
 				issueComments = append(issueComments, comments...)
 			}
+
 			issue.(map[string]interface{})["comments_data"] = issueComments
 			if thrN > 1 {
 				mtx.Unlock()
@@ -1419,6 +1415,7 @@ func (j *DSJira) ProcessIssue(ctx *shared.Ctx, allIssues, allDocs *[]interface{}
 				shared.Printf("processing next comments page from %d/%d\n", startAt, total)
 			}
 		}
+
 		if ctx.Debug > 1 {
 			shared.Printf("processed %d comments\n", startAt)
 		}
@@ -1441,6 +1438,7 @@ func (j *DSJira) ProcessIssue(ctx *shared.Ctx, allIssues, allDocs *[]interface{}
 	if thrN > 1 {
 		mtx.RLock()
 	}
+
 	issueFields, ok := issue.(map[string]interface{})["fields"].(map[string]interface{})
 	if thrN > 1 {
 		mtx.RUnlock()
@@ -1501,6 +1499,7 @@ func (j *DSJira) ProcessIssue(ctx *shared.Ctx, allIssues, allDocs *[]interface{}
 			}
 		}
 	}
+
 	if ctx.Debug > 1 {
 		shared.Printf("after drop: %+v\n", shared.DumpPreview(issueFields, 100))
 	}
@@ -1655,6 +1654,7 @@ func (j *DSJira) Sync(ctx *shared.Ctx) (err error) {
 			jql = fmt.Sprintf(`"jql":"updated > %d order by updated asc"`, epochMS)
 		}
 	}
+
 	expand := `"expand":["renderedFields","transitions","operations","changelog"]`
 	var (
 		allDocs      []interface{}
@@ -1725,6 +1725,7 @@ func (j *DSJira) Sync(ctx *shared.Ctx) (err error) {
 			if ctx.Debug > 0 {
 				shared.Printf("processing %d issues\n", len(issues))
 			}
+
 			for _, issue := range issues {
 				var esch chan error
 				esch, e = j.ProcessIssue(ctx, &allIssues, &allDocs, allIssuesMtx, issue, customFields, from, to, thrN)
