@@ -584,9 +584,7 @@ func (j *DSJira) WriteLog(ctx *shared.Ctx, timestamp time.Time, status, message 
 			{
 				"JIRA_URL":     j.URL,
 				"JIRA_PROJECT": ctx.Project,
-				"ES_URL":       ctx.ESURL,
-
-				"ProjectSlug": ctx.Project,
+				"ProjectSlug":  ctx.Project,
 			}},
 		Status:    status,
 		CreatedAt: timestamp,
