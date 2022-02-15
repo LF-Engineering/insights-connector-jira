@@ -257,8 +257,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 	source := JiraDataSource
 	for _, iDoc := range docs {
 		var (
-			labels    []string
-			issueBody *string
+			labels []string
 		)
 		nComments := 0
 		doc, _ := iDoc.(map[string]interface{})
@@ -274,9 +273,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 		projectKey, _ := doc["project_key"].(string)
 		projectName, _ := doc["project_name"].(string)
 		sIssueBody, _ := doc["main_description"].(string)
-		if sIssueBody != "" {
-			issueBody = &sIssueBody
-		}
+
 		//issueURL, _ := doc["url"].(string)
 		title, _ := doc["summary"].(string)
 		iLabels, okLabels := doc["labels"].([]interface{})
@@ -296,9 +293,6 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 		}
 
 		sIssueBody, _ = doc["main_description"].(string)
-		if sIssueBody != "" {
-			issueBody = &sIssueBody
-		}
 
 		if createdTz == "" {
 			createdTz = "UTC"
@@ -459,7 +453,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 			Contributors: issueContributors,
 			Issue: insights.Issue{
 				Title:           title,
-				Body:            *issueBody,
+				Body:            sIssueBody,
 				IssueID:         sIID,
 				IssueURL:        url,
 				State:           insights.IssueState(state),
