@@ -404,7 +404,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 						},
 					}
 					issueContributors = append(issueContributors, contributor)
-					commentSID := comment["comment_id"].(string)
+					commentSID, _ := comment["comment_id"].(string)
 					sCommentURL, _ := comment["comment_url"].(string)
 					if sCommentURL != "" {
 						commentURL = &sCommentURL
@@ -446,6 +446,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 		issue := jira.Issue{
 			ID:           issueID,
 			IssueKey:     issueKey,
+			EndpointID:   projectID,
 			ServerURL:    j.URL,
 			Project:      project,
 			Labels:       labels,
@@ -551,6 +552,7 @@ func (j *DSJira) OutputDocs(ctx *shared.Ctx, items []interface{}, docs *[]interf
 	}
 }
 
+// AddLogger - adds a logger
 func (j *DSJira) AddLogger(ctx *shared.Ctx) {
 	client, err := elastic.NewClientProvider(&elastic.Params{
 		URL:      os.Getenv("ELASTIC_LOG_URL"),
@@ -571,6 +573,7 @@ func (j *DSJira) AddLogger(ctx *shared.Ctx) {
 	j.Logger = *logProvider
 }
 
+// WriteLog - writes to log
 func (j *DSJira) WriteLog(ctx *shared.Ctx, timestamp time.Time, status, message string) {
 	_ = j.Logger.Write(&logger.Log{
 		Connector: JiraDataSource,
