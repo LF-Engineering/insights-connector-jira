@@ -3,6 +3,8 @@ github.com/LF-Engineering/insights-datasource-shared v1.4.1 h1:GjZVyrclZbJ/xdmvD
 github.com/LF-Engineering/insights-datasource-shared v1.4.1/go.mod h1:5rFuev3hw1RzH+gLm35R6m4z83SKyDtQfuk+ifubN6Y=
 github.com/LF-Engineering/lfx-event-schema v0.1.3 h1:ELAU71jb0HkcAqOQZ9K9Hgy5UJvFPfCHK5wicziT3CQ=
 github.com/LF-Engineering/lfx-event-schema v0.1.3/go.mod h1:GvEBmXvYGafFRIpZ6I0G5Ss4jsmkBNptLJIasLClXu8=
+github.com/LF-Engineering/lfx-event-schema v0.1.7-0.20220215235235-23c0f1a9f6a2 h1:+lr9AaRIWl9BUuLgtBpvsZqpBY/3bjvAjYSH22mOcLY=
+github.com/LF-Engineering/lfx-event-schema v0.1.7-0.20220215235235-23c0f1a9f6a2/go.mod h1:GvEBmXvYGafFRIpZ6I0G5Ss4jsmkBNptLJIasLClXu8=
 github.com/PuerkitoBio/purell v1.1.0/go.mod h1:c11w/QuzBsJSee3cPx9rAFu61PvFxuPbtSwDGJws/X0=
 github.com/PuerkitoBio/purell v1.1.1 h1:WEQqlqaGbrPkxLJWfBwQmfEAE1Z7ONdDLqrN38tNFfI=
 github.com/PuerkitoBio/purell v1.1.1/go.mod h1:c11w/QuzBsJSee3cPx9rAFu61PvFxuPbtSwDGJws/X0=
