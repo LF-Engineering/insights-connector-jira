@@ -451,7 +451,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 			Project:      project,
 			Labels:       labels,
 			Watchers:     watchers,
-			Contributors: issueContributors,
+			Contributors: shared.DedupContributors(issueContributors),
 			Issue: insights.Issue{
 				Title:           title,
 				Body:            sIssueBody,
