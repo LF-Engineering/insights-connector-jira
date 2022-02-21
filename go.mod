@@ -3,8 +3,8 @@ module github.com/LF-Engineering/insights-connector-jira
 go 1.17
 
 require (
-	github.com/LF-Engineering/insights-datasource-shared v1.4.2-0.20220217072513-70c8e982c727
-	github.com/LF-Engineering/lfx-event-schema v0.1.8-0.20220217061411-fc08702ce26c
+	github.com/LF-Engineering/insights-datasource-shared v1.4.2-0.20220221062423-d8079faae5d9
+	github.com/LF-Engineering/lfx-event-schema v0.1.8-0.20220218174420-9b6bda4ccec8
 	github.com/aws/aws-lambda-go v1.28.0
 	github.com/aws/aws-sdk-go v1.42.46
 	github.com/go-openapi/errors v0.20.2
