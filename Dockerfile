@@ -13,4 +13,4 @@ ENV ELASTIC_LOG_PASSWORD='<ELASTIC-LOG-PASSWORD>'
 RUN apk update && apk add --no-cache bash
 RUN ls -ltra
 COPY jira ./
-CMD ./jira --jira-url=${JIRA_URL} --jira-es-url="${ES_URL}" --jira-user="${JIRA_USER}" --jira-token="${JIRA_TOKEN}}"
+CMD ./jira --jira-url=${JIRA_URL} --jira-es-url="${ES_URL}" --jira-user="${JIRA_USER}" --jira-token="${JIRA_TOKEN}"
