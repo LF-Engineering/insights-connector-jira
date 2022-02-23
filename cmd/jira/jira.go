@@ -12,6 +12,7 @@ import (
 
 	neturl "net/url"
 
+	"github.com/LF-Engineering/insights-datasource-shared/cryptography"
 	"github.com/LF-Engineering/lfx-event-schema/service"
 	"github.com/LF-Engineering/lfx-event-schema/service/insights"
 	"github.com/LF-Engineering/lfx-event-schema/service/insights/jira"
@@ -83,7 +84,6 @@ var (
 	JiraKeepCustomFiled = map[string]struct{}{"Story Points": {}, "Sprint": {}}
 	gMaxUpstreamDt      time.Time
 	gMaxUpstreamDtMtx   = &sync.Mutex{}
-
 	// gJiraMetaData  = &models.MetaData{BackendName: "jira", BackendVersion: JiraBackendVersion}
 	// gRoleToType = map[string]string{
 	// 	"issue_creator":        "jira_issue_created",
@@ -146,28 +146,43 @@ func (j *DSJira) AddFlags(ctx *shared.Ctx) {
 	j.AddLogger(ctx)
 }
 
+func (j *DSJira) mapRoleType(role string) insights.Role {
+	// possible roles:
+	// issue: "assignee", "reporter", "creator"
+	// comment: "author", "updateAuthor"
+	switch role {
+	case "creator":
+		return insights.AuthorRole
+	case "assignee":
+		return insights.AssigneeRole
+	case "reporter":
+		return insights.ReporterRole
+	case "author", "updateAuthor":
+		return insights.CommenterRole
+	default:
+		fmt.Printf("WARNING: unknown role '%s'\n", role)
+	}
+	return insights.Role(role)
+}
+
 // GetModelData - return data in lfx-event-schema format
 func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][]interface{}, error) {
 	var data = make(map[string][]interface{})
 	var err error
 	defer func() {
-
 		if err != nil {
 			return
 		}
-
 		issueBaseEvent := jira.IssueBaseEvent{
 			Connector:        insights.JiraConnector,
 			ConnectorVersion: JiraBackendVersion,
 			Source:           insights.JiraSource,
 		}
-
 		issueCommentBaseEvent := jira.IssueCommentBaseEvent{
 			Connector:        insights.JiraConnector,
 			ConnectorVersion: JiraBackendVersion,
 			Source:           insights.JiraSource,
 		}
-
 		for k, v := range data {
 			switch k {
 			case "created":
@@ -208,9 +223,9 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 					})
 				}
 				data[k] = ary
-			case "comment_deleted":
+			case "comment_added":
 				baseEvent := service.BaseEvent{
-					Type: service.EventType(jira.IssueCommentDeletedEvent{}.Event()),
+					Type: service.EventType(jira.IssueCommentAddedEvent{}.Event()),
 					CRUDInfo: service.CRUDInfo{
 						CreatedBy: JiraConnector,
 						UpdatedBy: JiraConnector,
@@ -220,10 +235,10 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 				}
 				ary := []interface{}{}
 				for _, issueComment := range v {
-					ary = append(ary, jira.IssueCommentDeletedEvent{
+					ary = append(ary, jira.IssueCommentAddedEvent{
 						IssueCommentBaseEvent: issueCommentBaseEvent,
 						BaseEvent:             baseEvent,
-						Payload:               issueComment.(jira.DeleteIssueComment),
+						Payload:               issueComment.(jira.IssueComment),
 					})
 				}
 				data[k] = ary
@@ -246,14 +261,31 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 					})
 				}
 				data[k] = ary
-
+			case "comment_deleted":
+				baseEvent := service.BaseEvent{
+					Type: service.EventType(jira.IssueCommentDeletedEvent{}.Event()),
+					CRUDInfo: service.CRUDInfo{
+						CreatedBy: JiraConnector,
+						UpdatedBy: JiraConnector,
+						CreatedAt: time.Now().Unix(),
+						UpdatedAt: time.Now().Unix(),
+					},
+				}
+				ary := []interface{}{}
+				for _, issueComment := range v {
+					ary = append(ary, jira.IssueCommentDeletedEvent{
+						IssueCommentBaseEvent: issueCommentBaseEvent,
+						BaseEvent:             baseEvent,
+						Payload:               issueComment.(jira.DeleteIssueComment),
+					})
+				}
+				data[k] = ary
 			default:
 				err = fmt.Errorf("unknown issue '%s' event", k)
 				return
 			}
 		}
 	}()
-
 	source := JiraDataSource
 	for _, iDoc := range docs {
 		var (
@@ -273,7 +305,6 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 		projectKey, _ := doc["project_key"].(string)
 		projectName, _ := doc["project_name"].(string)
 		sIssueBody, _ := doc["main_description"].(string)
-
 		//issueURL, _ := doc["url"].(string)
 		title, _ := doc["summary"].(string)
 		iLabels, okLabels := doc["labels"].([]interface{})
@@ -285,50 +316,40 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 				}
 			}
 		}
-
 		projectID, err := jira.GenerateJiraProjectID(j.URL, jiraProjectID)
 		if err != nil {
 			shared.Printf("GenerateJiraProjectID(%s,%s): %+v for %+v\n", jiraProjectID, j.URL, err, doc)
 			return nil, err
 		}
-
 		sIssueBody, _ = doc["main_description"].(string)
-
 		if createdTz == "" {
 			createdTz = "UTC"
 		}
-
 		issueKey, _ := doc["key"].(string)
 		sIID, _ := doc["id"].(string)
-
 		issueID, err := jira.GenerateJiraIssueID(projectID, sIID)
 		if err != nil {
 			shared.Printf("GenerateJiraIssueID(%s,%s): %+v for %+v\n", projectID, sIID, err, doc)
 			return nil, err
 		}
-
 		url, _ := doc["url"].(string)
 		state := insights.IssueOpen
 		if isClosed {
 			state = insights.IssueClosed
 		}
-
 		project := jira.Project{
 			ID:          projectID,
 			ProjectID:   jiraProjectID,
 			ProjectKey:  projectKey,
 			ProjectName: projectName,
 		}
-
 		issueContributors := []insights.Contributor{}
 		roles, okRoles := doc["roles"].([]map[string]interface{})
 		if okRoles {
 			for _, role := range roles {
-				roleType, _ := role["role"].(string)
-				if roleType != "assignee_data" && roleType != "user_data" {
-					continue
-				}
-
+				// possible roles: assignee, reporter, creator
+				roleType, _ := role["type"].(string)
+				roleValue := j.mapRoleType(roleType)
 				name, _ := role["name"].(string)
 				username, _ := role["username"].(string)
 				email, _ := role["email"].(string)
@@ -338,8 +359,6 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 					shared.Printf("GenerateIdentity(%s,%s,%s,%s): %+v for %+v\n", source, email, name, username, err, doc)
 					return nil, err
 				}
-				roleValue := insights.AuthorRole
-
 				contributor := insights.Contributor{
 					Role:   roleValue,
 					Weight: 1.0,
@@ -354,10 +373,8 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 					},
 				}
 				issueContributors = append(issueContributors, contributor)
-
 			}
 		}
-
 		// Comments start
 		comments, okComments := doc["issue_comments"].([]map[string]interface{})
 		if okComments {
@@ -373,8 +390,28 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 						commentBody = &sCommentBody
 					}
 				}
-
+				// Output update comment only if actually updated (comment update date > comment create date)
+				dtMap := make(map[string]time.Time)
 				for _, roleData := range commentRoles {
+					roleType, _ := roleData["type"].(string)
+					dt, _ := roleData["dt"].(time.Time)
+					dtMap[roleType] = dt
+				}
+				skipUpdate := false
+				createDt, okCreate := dtMap["author"]
+				if okCreate {
+					updateDt, okUpdate := dtMap["updateAuthor"]
+					if okUpdate && !updateDt.After(createDt) {
+						skipUpdate = true
+					}
+				}
+				for _, roleData := range commentRoles {
+					// possible roles: author, updateAuthor
+					roleType, _ := roleData["type"].(string)
+					if skipUpdate && roleType == "updateAuthor" {
+						continue
+					}
+					roleValue := j.mapRoleType(roleType)
 					name, _ := roleData["name"].(string)
 					username, _ := roleData["username"].(string)
 					email, _ := roleData["email"].(string)
@@ -384,14 +421,12 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 						shared.Printf("GenerateIdentity(%s,%s,%s,%s): %+v for %+v\n", source, email, name, username, err, doc)
 						return nil, err
 					}
-
 					commentCreatedOn, _ := comment["metadata__updated_on"].(time.Time)
-
 					if commentCreatedOn.After(updatedOn) {
 						updatedOn = commentCreatedOn
 					}
 					contributor := insights.Contributor{
-						Role:   insights.CommenterRole,
+						Role:   roleValue,
 						Weight: 1.0,
 						Identity: user.UserIdentityObjectBase{
 							ID:         userID,
@@ -427,21 +462,23 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 							Orphaned:        false,
 						},
 					}
-					key := "comment_added"
+					var key string
+					if roleType == "updateAuthor" {
+						key = "comment_edited"
+					} else {
+						key = "comment_added"
+					}
 					ary, ok := data[key]
 					if !ok {
 						ary = []interface{}{issueComment}
 					} else {
 						ary = append(ary, issueComment)
 					}
-
 					data[key] = ary
-
 				}
 			}
 		}
 		// Comments end
-
 		// Final Issue object
 		issue := jira.Issue{
 			ID:           issueID,
@@ -463,33 +500,28 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 				Orphaned:        false,
 			},
 		}
-
 		isNew := false
 		if !updatedOn.After(createdOn) || (nComments == 0) {
 			isNew = true
 		}
-
 		key := "updated"
 		if isNew {
 			key = "created"
 		}
-
 		ary, ok := data[key]
 		if !ok {
 			ary = []interface{}{issue}
 		} else {
 			ary = append(ary, issue)
 		}
-
 		data[key] = ary
-
+		// fmt.Printf("contributors=%s\ndoc=%s\n", shared.PrettyPrint(shared.DedupContributors(issueContributors)), shared.PrettyPrint(doc))
 		gMaxUpstreamDtMtx.Lock()
 		if updatedOn.After(gMaxUpstreamDt) {
 			gMaxUpstreamDt = updatedOn
 		}
 		gMaxUpstreamDtMtx.Unlock()
 	}
-
 	return data, nil
 }
 
@@ -591,6 +623,12 @@ func (j *DSJira) WriteLog(ctx *shared.Ctx, timestamp time.Time, status, message 
 
 // ParseArgs - parse jira specific environment variables
 func (j *DSJira) ParseArgs(ctx *shared.Ctx) error {
+	// Cryptography
+	encrypt, err := cryptography.NewEncryptionClient()
+	if err != nil {
+		return err
+	}
+
 	// Jira Server URL
 	if shared.FlagPassed(ctx, "url") && *j.FlagURL != "" {
 		j.URL = *j.FlagURL
@@ -616,7 +654,10 @@ func (j *DSJira) ParseArgs(ctx *shared.Ctx) error {
 
 	// SSO User
 	if shared.FlagPassed(ctx, "user") && *j.FlagUser != "" {
-		j.User = *j.FlagUser
+		j.User, err = encrypt.Decrypt(*j.FlagUser)
+		if err != nil {
+			return err
+		}
 	}
 	if ctx.EnvSet("USER") {
 		j.User = ctx.Env("USER")
@@ -627,7 +668,10 @@ func (j *DSJira) ParseArgs(ctx *shared.Ctx) error {
 
 	// SSO Token
 	if shared.FlagPassed(ctx, "token") && *j.FlagToken != "" {
-		j.Token = *j.FlagToken
+		j.Token, err = encrypt.Decrypt(*j.FlagToken)
+		if err != nil {
+			return err
+		}
 	}
 	if ctx.EnvSet("TOKEN") {
 		j.Token = ctx.Env("TOKEN")
