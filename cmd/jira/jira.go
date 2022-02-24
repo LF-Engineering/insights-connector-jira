@@ -1880,6 +1880,7 @@ func main() {
 	}
 	// Update status to in progress in log clusterx
 	timestamp := time.Now()
+	shared.AddLogger(&jira.Logger, JiraDataSource, logger.Internal, []map[string]string{{"JIRA_URL": jira.URL, "JIRA_PROJECT": ctx.Project, "ProjectSlug": ctx.Project}})
 	jira.WriteLog(&ctx, timestamp, logger.InProgress, "")
 	err = jira.Sync(&ctx)
 	if err != nil {
