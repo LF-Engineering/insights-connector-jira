@@ -654,29 +654,31 @@ func (j *DSJira) ParseArgs(ctx *shared.Ctx) error {
 
 	// SSO User
 	if shared.FlagPassed(ctx, "user") && *j.FlagUser != "" {
-		j.User, err = encrypt.Decrypt(*j.FlagUser)
-		if err != nil {
-			return err
-		}
+		j.User = *j.FlagUser
 	}
 	if ctx.EnvSet("USER") {
 		j.User = ctx.Env("USER")
 	}
 	if j.User != "" {
+		j.User, err = encrypt.Decrypt(j.User)
+		if err != nil {
+			return err
+		}
 		shared.AddRedacted(j.User, false)
 	}
 
 	// SSO Token
 	if shared.FlagPassed(ctx, "token") && *j.FlagToken != "" {
-		j.Token, err = encrypt.Decrypt(*j.FlagToken)
-		if err != nil {
-			return err
-		}
+		j.Token = *j.FlagToken
 	}
 	if ctx.EnvSet("TOKEN") {
 		j.Token = ctx.Env("TOKEN")
 	}
 	if j.Token != "" {
+		j.Token, err = encrypt.Decrypt(j.Token)
+		if err != nil {
+			return err
+		}
 		shared.AddRedacted(j.Token, false)
 	}
 
