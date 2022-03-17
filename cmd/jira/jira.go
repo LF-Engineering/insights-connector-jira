@@ -397,14 +397,16 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 					dt, _ := roleData["dt"].(time.Time)
 					dtMap[roleType] = dt
 				}
-				skipUpdate := false
+				var updateDt time.Time
+				skipUpdate, okUpdate := false, false
 				createDt, okCreate := dtMap["author"]
 				if okCreate {
-					updateDt, okUpdate := dtMap["updateAuthor"]
+					updateDt, okUpdate = dtMap["updateAuthor"]
 					if okUpdate && !updateDt.After(createDt) {
 						skipUpdate = true
 					}
 				}
+				// fmt.Printf("(%+v,%+v),(%+v,%+v),%+v\n", createDt, okCreate, updateDt, okUpdate, skipUpdate)
 				for _, roleData := range commentRoles {
 					// possible roles: author, updateAuthor
 					roleType, _ := roleData["type"].(string)
@@ -421,10 +423,11 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 						shared.Printf("GenerateIdentity(%s,%s,%s,%s): %+v for %+v\n", source, email, name, username, err, doc)
 						return nil, err
 					}
-					commentCreatedOn, _ := comment["metadata__updated_on"].(time.Time)
-					if commentCreatedOn.After(updatedOn) {
-						updatedOn = commentCreatedOn
+					commentCreatedOn := createDt
+					if okUpdate && updateDt.After(updatedOn) {
+						updatedOn = updateDt
 					}
+					// fmt.Printf("(%+v,%+v)\n", commentCreatedOn, updatedOn)
 					contributor := insights.Contributor{
 						Role:   roleValue,
 						Weight: 1.0,
