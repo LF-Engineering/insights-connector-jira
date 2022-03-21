@@ -452,6 +452,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 						shared.Printf("GenerateJiraCommentID(%s,%s): %+v for %+v\n", projectID, commentSID, err, doc)
 						return nil, err
 					}
+					nComments++
 					issueComment := jira.IssueComment{
 						ID:      issueCommentID,
 						IssueID: issueID,
