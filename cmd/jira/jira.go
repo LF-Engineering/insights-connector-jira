@@ -482,6 +482,10 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 				}
 			}
 		}
+		sourceTimestamp := createdOn
+		if updatedOn.After(createdOn) {
+			sourceTimestamp = updatedOn
+		}
 		// Comments end
 		// Final Issue object
 		issue := jira.Issue{
@@ -500,7 +504,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 				IssueURL:        url,
 				State:           insights.IssueState(state),
 				SyncTimestamp:   time.Now(),
-				SourceTimestamp: createdOn,
+				SourceTimestamp: sourceTimestamp,
 				Orphaned:        false,
 			},
 		}
@@ -519,7 +523,6 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 			ary = append(ary, issue)
 		}
 		data[key] = ary
-		// fmt.Printf("contributors=%s\ndoc=%s\n", shared.PrettyPrint(shared.DedupContributors(issueContributors)), shared.PrettyPrint(doc))
 		gMaxUpstreamDtMtx.Lock()
 		if updatedOn.After(gMaxUpstreamDt) {
 			gMaxUpstreamDt = updatedOn
