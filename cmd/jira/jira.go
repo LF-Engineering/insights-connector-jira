@@ -206,7 +206,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 				data[k] = ary
 			case "updated":
 				baseEvent := service.BaseEvent{
-					Type: service.EventType(jira.IssueCreatedEvent{}.Event()),
+					Type: service.EventType(jira.IssueUpdatedEvent{}.Event()),
 					CRUDInfo: service.CRUDInfo{
 						CreatedBy: JiraConnector,
 						UpdatedBy: JiraConnector,
@@ -344,6 +344,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 			ProjectName: projectName,
 		}
 		issueContributors := []insights.Contributor{}
+		// shared.Printf("createdOn: %+v, updatedOn: %+v for %s (%s,%s)\n", createdOn, updatedOn, sIID, issueID, issueKey)
 		roles, okRoles := doc["roles"].([]map[string]interface{})
 		if okRoles {
 			for _, role := range roles {
@@ -425,6 +426,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 					}
 					commentCreatedOn := createDt
 					if okUpdate && updateDt.After(updatedOn) {
+						// shared.Printf("%s (%s,%s) updatedOn: %+v -> %+v\n", sIID, issueID, issueKey, updatedOn, updateDt)
 						updatedOn = updateDt
 					}
 					// fmt.Printf("(%+v,%+v)\n", commentCreatedOn, updatedOn)
@@ -453,6 +455,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 						return nil, err
 					}
 					nComments++
+					// shared.Printf("%s (%s,%s) nComments: %d\n", sIID, issueID, issueKey, nComments)
 					issueComment := jira.IssueComment{
 						ID:      issueCommentID,
 						IssueID: issueID,
@@ -516,6 +519,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 		if isNew {
 			key = "created"
 		}
+		// shared.Printf("%s (%s,%s) final (createdOn, updatedOn, nComments, key): (%+v, %+v, %d, %s)\n", sIID, issueID, issueKey, createdOn, updatedOn, nComments, key)
 		ary, ok := data[key]
 		if !ok {
 			ary = []interface{}{issue}
