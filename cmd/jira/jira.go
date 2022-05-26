@@ -456,12 +456,20 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 					}
 					nComments++
 					// shared.Printf("%s (%s,%s) nComments: %d\n", sIID, issueID, issueKey, nComments)
+					cBody := ""
+					cURL := ""
+					if commentBody != nil {
+						cBody = *commentBody
+					}
+					if commentURL != nil {
+						cURL = *commentURL
+					}
 					issueComment := jira.IssueComment{
 						ID:      issueCommentID,
 						IssueID: issueID,
 						Comment: insights.Comment{
-							Body:            *commentBody,
-							CommentURL:      *commentURL,
+							Body:            cBody,
+							CommentURL:      cURL,
 							SourceTimestamp: commentCreatedOn,
 							SyncTimestamp:   time.Now(),
 							CommentID:       commentSID,
