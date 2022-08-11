@@ -4,8 +4,7 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
-	"github.com/LF-Engineering/insights-connector-jira/build"
-	"github.com/sirupsen/logrus"
+	"github.com/LF-Engineering/insights-datasource-shared/aws"
 	"os"
 	"strconv"
 	"strings"
@@ -14,6 +13,7 @@ import (
 
 	neturl "net/url"
 
+	"github.com/LF-Engineering/insights-connector-jira/build"
 	"github.com/LF-Engineering/insights-datasource-shared/cryptography"
 	"github.com/LF-Engineering/lfx-event-schema/service"
 	"github.com/LF-Engineering/lfx-event-schema/service/insights"
@@ -22,6 +22,7 @@ import (
 	"github.com/LF-Engineering/lfx-event-schema/utils/datalake"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/sirupsen/logrus"
 
 	shared "github.com/LF-Engineering/insights-datasource-shared"
 	elastic "github.com/LF-Engineering/insights-datasource-shared/elastic"
@@ -135,7 +136,7 @@ func (j *DSJira) AddPublisher(publisher Publisher) {
 // FIXME: don't use when done implementing
 func (j *DSJira) PublisherPushEvents(ev, ori, src, cat, env string, v []interface{}) error {
 	data, err := jsoniter.Marshal(v)
-	j.log.WithFields(logrus.Fields{"operation": "PublisherPushEvents"}).Infof("publish[ev=%s ori=%s src=%s cat=%s env=%s]: %d items: %+v -> %v\n", ev, ori, src, cat, env, len(v), string(data), err)
+	j.log.WithFields(logrus.Fields{"operation": "PublisherPushEvents"}).Infof("publish[ev=%s ori=%s src=%s cat=%s env=%s]: %d items: %+v -> %v", ev, ori, src, cat, env, len(v), string(data), err)
 	return nil
 }
 
@@ -332,7 +333,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 		sIID, _ := doc["id"].(string)
 		issueID, err := jira.GenerateJiraIssueID(projectID, sIID)
 		if err != nil {
-			j.log.WithFields(logrus.Fields{"operation": "GetModelData"}).Errorf("GenerateJiraIssueID(%s,%s): %+v for %+v\n", projectID, sIID, err, doc)
+			j.log.WithFields(logrus.Fields{"operation": "GetModelData"}).Errorf("GenerateJiraIssueID(%s,%s): %+v for %+v", projectID, sIID, err, doc)
 			return nil, err
 		}
 		url, _ := doc["url"].(string)
@@ -360,7 +361,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 				avatarURL, _ := role["avatar_url"].(string)
 				userID, err := user.GenerateIdentity(&source, &email, &name, &username)
 				if err != nil {
-					j.log.WithFields(logrus.Fields{"operation": "GetModelData"}).Errorf("GenerateIdentity(%s,%s,%s,%s): %+v for %+v\n", source, email, name, username, err, doc)
+					j.log.WithFields(logrus.Fields{"operation": "GetModelData"}).Errorf("GenerateIdentity(%s,%s,%s,%s): %+v for %+v", source, email, name, username, err, doc)
 					return nil, err
 				}
 				contributor := insights.Contributor{
@@ -628,9 +629,15 @@ func (j *DSJira) AddLogger(ctx *shared.Ctx) {
 }
 
 // WriteLog - writes to log
-func (j *DSJira) WriteLog(ctx *shared.Ctx, timestamp time.Time, status, message string) {
-	_ = j.Logger.Write(&logger.Log{
+func (j *DSJira) WriteLog(ctx *shared.Ctx, timestamp time.Time, status, message string) error {
+	arn, err := aws.GetContainerARN()
+	if err != nil {
+		j.log.WithFields(logrus.Fields{"operation": "WriteLog"}).Errorf("getContainerMetadata Error : %+v", err)
+		return err
+	}
+	err = j.Logger.Write(&logger.Log{
 		Connector: JiraDataSource,
+		TaskARN:   arn,
 		Configuration: []map[string]string{
 			{
 				"JIRA_URL":     j.URL,
@@ -641,6 +648,7 @@ func (j *DSJira) WriteLog(ctx *shared.Ctx, timestamp time.Time, status, message 
 		CreatedAt: timestamp,
 		Message:   message,
 	})
+	return err
 }
 
 // ParseArgs - parse jira specific environment variables
@@ -1340,7 +1348,7 @@ func (j *DSJira) AddMetadata(ctx *shared.Ctx, issue interface{}) (mItem map[stri
 	mItem["metadata__timestamp"] = shared.ToESDate(timestamp)
 	// mItem[ProjectSlug] = ctx.ProjectSlug
 	if ctx.Debug > 1 {
-		j.log.WithFields(logrus.Fields{"operation": "AddMetadata"}).Debugf("%s: %s: %v %v\n", origin, uuid, issueID, updatedOn)
+		j.log.WithFields(logrus.Fields{"operation": "AddMetadata"}).Debugf("%s: %s: %v %v", origin, uuid, issueID, updatedOn)
 	}
 	return
 }
@@ -1875,7 +1883,7 @@ func (j *DSJira) Sync(ctx *shared.Ctx) (err error) {
 	}
 	nIssues := len(allIssues)
 	if ctx.Debug > 0 {
-		j.log.WithFields(logrus.Fields{"operation": "Sync"}).Debugf("%d remaining issues to send to queue\n", nIssues)
+		j.log.WithFields(logrus.Fields{"operation": "Sync"}).Debugf("%d remaining issues to send to queue", nIssues)
 	}
 	// NOTE: for all items, even if 0 - to flush the queue
 	err = j.JiraEnrichItems(ctx, thrN, allIssues, &allDocs, true)
@@ -1907,17 +1915,24 @@ func main() {
 	shared.SetSyncMode(true, false)
 	shared.SetLogLoggerError(false)
 	shared.AddLogger(&jira.Logger, JiraDataSource, logger.Internal, []map[string]string{{"JIRA_URL": jira.URL, "JIRA_PROJECT": ctx.Project, "ProjectSlug": ctx.Project}})
-	jira.WriteLog(&ctx, timestamp, logger.InProgress, "")
+	err = jira.WriteLog(&ctx, timestamp, logger.InProgress, "")
+	if err != nil {
+		jira.log.WithFields(logrus.Fields{"operation": "main"}).Errorf("WriteLog Error : %+v", err)
+		return
+	}
 	err = jira.Sync(&ctx)
 	if err != nil {
 		jira.log.WithFields(logrus.Fields{"operation": "main"}).Errorf("Error Sync jira: %+v", err)
 		// Update status to failed in log cluster
-		jira.WriteLog(&ctx, timestamp, logger.Failed, "")
+		er := jira.WriteLog(&ctx, timestamp, logger.Failed, "")
+		if er != nil {
+			err = er
+		}
 		return
 	}
 
 	// Update status to done in log cluster
-	jira.WriteLog(&ctx, timestamp, logger.Done, "")
+	err = jira.WriteLog(&ctx, timestamp, logger.Done, "")
 }
 
 // createStructuredLogger...
