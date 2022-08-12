@@ -532,7 +532,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 		cacheID := fmt.Sprintf("%s-%s", JiraIssue, issueID)
 		isCreated, err := j.cacheProvider.IsKeyCreated(fmt.Sprintf("%s/%s", j.endpoint, JiraIssue), cacheID)
 		if err != nil {
-			j.log.WithFields(logrus.Fields{"operation": "GetModelDataPullRequest"}).Errorf("error getting cache for endpoint %s/%s/%s. error: %+v", j.Org, j.Repo, GitHubPullrequest, err)
+			j.log.WithFields(logrus.Fields{"operation": "GetModelDataPullRequest"}).Errorf("error getting cache for endpoint %s/%s. error: %+v", j.endpoint, JiraIssue, err)
 			return data, err
 		}
 		key := "updated"
