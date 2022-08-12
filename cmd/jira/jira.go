@@ -573,11 +573,19 @@ func (j *DSJira) OutputDocs(ctx *shared.Ctx, items []interface{}, docs *[]interf
 				insightsStr := "insights"
 				issuesStr := "issues"
 				envStr := os.Getenv("STAGE")
+				data := make([]map[string]interface{}, 0)
 				for k, v := range issuesData {
 					switch k {
 					case "created":
 						ev, _ := v[0].(jira.IssueCreatedEvent)
 						err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, issuesStr, envStr, v)
+						for _, val := range v {
+							id := fmt.Sprintf("%s-%s", "issue", val.(jira.IssueCreatedEvent).Payload.ID)
+							data = append(data, map[string]interface{}{
+								"id":   id,
+								"data": "",
+							})
+						}
 					case "updated":
 						ev, _ := v[0].(jira.IssueUpdatedEvent)
 						err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, issuesStr, envStr, v)
@@ -596,6 +604,10 @@ func (j *DSJira) OutputDocs(ctx *shared.Ctx, items []interface{}, docs *[]interf
 					if err != nil {
 						break
 					}
+				}
+				err = j.cacheProvider.Create(fmt.Sprintf("%s/%s", j.endpoint, JiraIssue), data)
+				if err != nil {
+					j.log.WithFields(logrus.Fields{"operation": "OutputDocs"}).Errorf("error creating cache for endpoint %s/%s. Error: %+v", j.endpoint, JiraIssue, err)
 				}
 			} else {
 				jsonBytes, err = jsoniter.Marshal(issuesData)
