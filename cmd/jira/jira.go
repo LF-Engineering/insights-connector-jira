@@ -71,7 +71,8 @@ const (
 	// Failed status
 	Failed = "failed"
 	// Success status
-	Success = "success"
+	Success   = "success"
+	JiraIssue = "issue"
 )
 
 var (
@@ -528,12 +529,14 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 				Orphaned:        false,
 			},
 		}
-		isNew := false
-		if !updatedOn.After(createdOn) || (nComments == 0) {
-			isNew = true
+		cacheID := fmt.Sprintf("%s-%s", JiraIssue, issueID)
+		isCreated, err := j.cacheProvider.IsKeyCreated(fmt.Sprintf("%s/%s", j.endpoint, JiraIssue), cacheID)
+		if err != nil {
+			j.log.WithFields(logrus.Fields{"operation": "GetModelDataPullRequest"}).Errorf("error getting cache for endpoint %s/%s/%s. error: %+v", j.Org, j.Repo, GitHubPullrequest, err)
+			return data, err
 		}
 		key := "updated"
-		if isNew {
+		if !isCreated {
 			key = "created"
 		}
 		// shared.Printf("%s (%s,%s) final (createdOn, updatedOn, nComments, key): (%+v, %+v, %d, %s)\n", sIID, issueID, issueKey, createdOn, updatedOn, nComments, key)
