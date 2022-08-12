@@ -2,9 +2,9 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/LF-Engineering/insights-datasource-shared/aws"
 	"os"
 	"strconv"
 	"strings"
@@ -14,7 +14,10 @@ import (
 	neturl "net/url"
 
 	"github.com/LF-Engineering/insights-connector-jira/build"
+	"github.com/LF-Engineering/insights-datasource-shared/aws"
+	"github.com/LF-Engineering/insights-datasource-shared/cache"
 	"github.com/LF-Engineering/insights-datasource-shared/cryptography"
+	"github.com/LF-Engineering/insights-datasource-shared/http"
 	"github.com/LF-Engineering/lfx-event-schema/service"
 	"github.com/LF-Engineering/lfx-event-schema/service/insights"
 	"github.com/LF-Engineering/lfx-event-schema/service/insights/jira"
@@ -115,9 +118,11 @@ type DSJira struct {
 	FlagPageSize *int
 	// Publisher & stream
 	Publisher
-	Stream string // stream to publish the data
-	Logger logger.Logger
-	log    *logrus.Entry
+	Stream        string // stream to publish the data
+	Logger        logger.Logger
+	log           *logrus.Entry
+	cacheProvider cache.Manager
+	endpoint      string
 }
 
 // JiraField - informatin about fields present in issues
@@ -603,7 +608,10 @@ func (j *DSJira) OutputDocs(ctx *shared.Ctx, items []interface{}, docs *[]interf
 		*docs = []interface{}{}
 		gMaxUpstreamDtMtx.Lock()
 		defer gMaxUpstreamDtMtx.Unlock()
-		shared.SetLastUpdate(ctx, j.URL, gMaxUpstreamDt)
+		err = j.cacheProvider.SetLastSync(j.endpoint, gMaxUpstreamDt)
+		if err != nil {
+			j.log.WithFields(logrus.Fields{"operation": "OutputDocs"}).Infof("unable to set last sync date to cache.error: %v", err)
+		}
 	}
 }
 
@@ -1652,7 +1660,12 @@ func (j *DSJira) Sync(ctx *shared.Ctx) (err error) {
 	}
 
 	if ctx.DateFrom == nil {
-		ctx.DateFrom = shared.GetLastUpdate(ctx, j.Endpoint(ctx))
+		cachedLastSync, er := j.cacheProvider.GetLastSync(j.endpoint)
+		if er != nil {
+			err = er
+			return
+		}
+		ctx.DateFrom = &cachedLastSync
 		if ctx.DateFrom != nil {
 			j.log.WithFields(logrus.Fields{"operation": "Sync"}).Infof("%s resuming from %v (%d threads)", j.Endpoint(ctx), ctx.DateFrom, thrN)
 		}
@@ -1895,7 +1908,10 @@ func (j *DSJira) Sync(ctx *shared.Ctx) (err error) {
 	// NOTE: Non-generic ends here
 	gMaxUpstreamDtMtx.Lock()
 	defer gMaxUpstreamDtMtx.Unlock()
-	shared.SetLastUpdate(ctx, j.Endpoint(ctx), gMaxUpstreamDt)
+	err = j.cacheProvider.SetLastSync(j.endpoint, gMaxUpstreamDt)
+	if err != nil {
+		j.log.WithFields(logrus.Fields{"operation": "Sync"}).Infof("unable to set last sync date to cache.error: %v", err)
+	}
 	return
 }
 
@@ -1915,24 +1931,33 @@ func main() {
 	shared.SetSyncMode(true, false)
 	shared.SetLogLoggerError(false)
 	shared.AddLogger(&jira.Logger, JiraDataSource, logger.Internal, []map[string]string{{"JIRA_URL": jira.URL, "JIRA_PROJECT": ctx.Project, "ProjectSlug": ctx.Project}})
-	err = jira.WriteLog(&ctx, timestamp, logger.InProgress, "")
+	jira.AddCacheProvider()
+	projects, err := jira.getProjects()
 	if err != nil {
-		jira.log.WithFields(logrus.Fields{"operation": "main"}).Errorf("WriteLog Error : %+v", err)
 		return
 	}
-	err = jira.Sync(&ctx)
-	if err != nil {
-		jira.log.WithFields(logrus.Fields{"operation": "main"}).Errorf("Error Sync jira: %+v", err)
-		// Update status to failed in log cluster
-		er := jira.WriteLog(&ctx, timestamp, logger.Failed, "")
-		if er != nil {
-			err = er
+	for _, p := range projects {
+		err = jira.WriteLog(&ctx, timestamp, logger.InProgress, "")
+		if err != nil {
+			jira.log.WithFields(logrus.Fields{"operation": "main"}).Errorf("WriteLog Error : %+v", err)
+			return
 		}
-		return
+		ctx.Project = p.ID
+		ctx.ProjectFilter = true
+		jira.endpoint = strings.ReplaceAll(strings.TrimPrefix(strings.TrimPrefix(jira.URL, "https://"), "http://"), "/", "-") + "/" + p.Key
+		err = jira.Sync(&ctx)
+		if err != nil {
+			jira.log.WithFields(logrus.Fields{"operation": "main"}).Errorf("Error Sync jira: %+v", err)
+			// Update status to failed in log cluster
+			er := jira.WriteLog(&ctx, timestamp, logger.Failed, err.Error())
+			if er != nil {
+				err = er
+			}
+		}
+		// Update status to done in log cluster
+		err = jira.WriteLog(&ctx, timestamp, logger.Done, "")
 	}
 
-	// Update status to done in log cluster
-	err = jira.WriteLog(&ctx, timestamp, logger.Done, "")
 }
 
 // createStructuredLogger...
@@ -1947,4 +1972,39 @@ func (j *DSJira) createStructuredLogger() {
 			"endpoint":    j.URL,
 		})
 	j.log = log
+}
+
+// AddCacheProvider - adds cache provider
+func (j *DSJira) AddCacheProvider() {
+	cacheProvider := cache.NewManager(JiraDataSource, os.Getenv("STAGE"))
+	j.cacheProvider = *cacheProvider
+}
+
+func (j *DSJira) getProjects() ([]project, error) {
+	httpClient := http.NewClientProvider(time.Second*60, false)
+	url := j.URL + JiraAPIRoot + "/project"
+	var headers map[string]string
+	if j.Token != "" {
+		headers = map[string]string{"Authorization": "Basic " + j.Token}
+	}
+
+	statusCode, res, err := httpClient.Request(url, "GET", headers, nil, nil)
+	if err != nil {
+		return []project{}, err
+	}
+	if statusCode > 201 {
+		return []project{}, fmt.Errorf("error getting projects, status code: %d", statusCode)
+	}
+
+	var projectsRes []project
+	err = json.Unmarshal(res, &projectsRes)
+	if err != nil {
+		return projectsRes, err
+	}
+	return projectsRes, nil
+}
+
+type project struct {
+	ID  string `json:"id"`
+	Key string `json:"key"`
 }
