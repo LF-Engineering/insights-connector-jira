@@ -24,6 +24,7 @@ vendor/
 out
 xxx
 yyy
+.idea
 
 # golang output binary directory
 bin

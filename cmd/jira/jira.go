@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -12,7 +13,11 @@ import (
 
 	neturl "net/url"
 
+	"github.com/LF-Engineering/insights-connector-jira/build"
+	"github.com/LF-Engineering/insights-datasource-shared/aws"
+	"github.com/LF-Engineering/insights-datasource-shared/cache"
 	"github.com/LF-Engineering/insights-datasource-shared/cryptography"
+	"github.com/LF-Engineering/insights-datasource-shared/http"
 	"github.com/LF-Engineering/lfx-event-schema/service"
 	"github.com/LF-Engineering/lfx-event-schema/service/insights"
 	"github.com/LF-Engineering/lfx-event-schema/service/insights/jira"
@@ -20,6 +25,7 @@ import (
 	"github.com/LF-Engineering/lfx-event-schema/utils/datalake"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/sirupsen/logrus"
 
 	shared "github.com/LF-Engineering/insights-datasource-shared"
 	elastic "github.com/LF-Engineering/insights-datasource-shared/elastic"
@@ -65,7 +71,8 @@ const (
 	// Failed status
 	Failed = "failed"
 	// Success status
-	Success = "success"
+	Success   = "success"
+	JiraIssue = "issue"
 )
 
 var (
@@ -112,8 +119,11 @@ type DSJira struct {
 	FlagPageSize *int
 	// Publisher & stream
 	Publisher
-	Stream string // stream to publish the data
-	Logger logger.Logger
+	Stream        string // stream to publish the data
+	Logger        logger.Logger
+	log           *logrus.Entry
+	cacheProvider cache.Manager
+	endpoint      string
 }
 
 // JiraField - informatin about fields present in issues
@@ -132,7 +142,7 @@ func (j *DSJira) AddPublisher(publisher Publisher) {
 // FIXME: don't use when done implementing
 func (j *DSJira) PublisherPushEvents(ev, ori, src, cat, env string, v []interface{}) error {
 	data, err := jsoniter.Marshal(v)
-	shared.Printf("publish[ev=%s ori=%s src=%s cat=%s env=%s]: %d items: %+v -> %v\n", ev, ori, src, cat, env, len(v), string(data), err)
+	j.log.WithFields(logrus.Fields{"operation": "PublisherPushEvents"}).Infof("publish[ev=%s ori=%s src=%s cat=%s env=%s]: %d items: %+v -> %v", ev, ori, src, cat, env, len(v), string(data), err)
 	return nil
 }
 
@@ -328,7 +338,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 		}
 		projectID, err := jira.GenerateJiraProjectID(j.URL, jiraProjectID)
 		if err != nil {
-			shared.Printf("GenerateJiraProjectID(%s,%s): %+v for %+v\n", jiraProjectID, j.URL, err, doc)
+			j.log.WithFields(logrus.Fields{"operation": "GetModelData"}).Errorf("GenerateJiraProjectID(%s,%s): %+v for %+v", jiraProjectID, j.URL, err, doc)
 			return nil, err
 		}
 		sIssueBody, _ = doc["main_description"].(string)
@@ -339,7 +349,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 		sIID, _ := doc["id"].(string)
 		issueID, err := jira.GenerateJiraIssueID(projectID, sIID)
 		if err != nil {
-			shared.Printf("GenerateJiraIssueID(%s,%s): %+v for %+v\n", projectID, sIID, err, doc)
+			j.log.WithFields(logrus.Fields{"operation": "GetModelData"}).Errorf("GenerateJiraIssueID(%s,%s): %+v for %+v", projectID, sIID, err, doc)
 			return nil, err
 		}
 		url, _ := doc["url"].(string)
@@ -367,7 +377,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 				avatarURL, _ := role["avatar_url"].(string)
 				userID, err := user.GenerateIdentity(&source, &email, &name, &username)
 				if err != nil {
-					shared.Printf("GenerateIdentity(%s,%s,%s,%s): %+v for %+v\n", source, email, name, username, err, doc)
+					j.log.WithFields(logrus.Fields{"operation": "GetModelData"}).Errorf("GenerateIdentity(%s,%s,%s,%s): %+v for %+v", source, email, name, username, err, doc)
 					return nil, err
 				}
 				contributor := insights.Contributor{
@@ -431,7 +441,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 					avatarURL, _ := roleData["avatar_url"].(string)
 					userID, err := user.GenerateIdentity(&source, &email, &name, &username)
 					if err != nil {
-						shared.Printf("GenerateIdentity(%s,%s,%s,%s): %+v for %+v\n", source, email, name, username, err, doc)
+						j.log.WithFields(logrus.Fields{"operation": "GetModelData"}).Errorf("GenerateIdentity(%s,%s,%s,%s): %+v for %+v", source, email, name, username, err, doc)
 						return nil, err
 					}
 					commentCreatedOn := createDt
@@ -461,7 +471,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 					}
 					issueCommentID, err := jira.GenerateJiraCommentID(projectID, commentSID)
 					if err != nil {
-						shared.Printf("GenerateJiraCommentID(%s,%s): %+v for %+v\n", projectID, commentSID, err, doc)
+						j.log.WithFields(logrus.Fields{"operation": "GetModelData"}).Errorf("GenerateJiraCommentID(%s,%s): %+v for %+v", projectID, commentSID, err, doc)
 						return nil, err
 					}
 					nComments++
@@ -530,12 +540,14 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 				Orphaned:        false,
 			},
 		}
-		isNew := false
-		if !updatedOn.After(createdOn) || (nComments == 0) {
-			isNew = true
+		cacheID := fmt.Sprintf("%s-%s", JiraIssue, issueID)
+		isCreated, err := j.cacheProvider.IsKeyCreated(fmt.Sprintf("%s/%s", j.endpoint, JiraIssue), cacheID)
+		if err != nil {
+			j.log.WithFields(logrus.Fields{"operation": "GetModelDataPullRequest"}).Errorf("error getting cache for endpoint %s/%s. error: %+v", j.endpoint, JiraIssue, err)
+			return data, err
 		}
 		key := "updated"
-		if isNew {
+		if !isCreated {
 			key = "created"
 		}
 		// shared.Printf("%s (%s,%s) final (createdOn, updatedOn, nComments, key): (%+v, %+v, %d, %s)\n", sIID, issueID, issueKey, createdOn, updatedOn, nComments, key)
@@ -559,7 +571,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 func (j *DSJira) OutputDocs(ctx *shared.Ctx, items []interface{}, docs *[]interface{}, final bool) {
 	if len(*docs) > 0 {
 		// actual output
-		shared.Printf("output processing(%d/%d/%v)\n", len(items), len(*docs), final)
+		j.log.WithFields(logrus.Fields{"operation": "OutputDocs"}).Infof("output processing(%d/%d/%v)", len(items), len(*docs), final)
 		var (
 			issuesData map[string][]interface{}
 			jsonBytes  []byte
@@ -572,11 +584,19 @@ func (j *DSJira) OutputDocs(ctx *shared.Ctx, items []interface{}, docs *[]interf
 				insightsStr := "insights"
 				issuesStr := "issues"
 				envStr := os.Getenv("STAGE")
+				data := make([]map[string]interface{}, 0)
 				for k, v := range issuesData {
 					switch k {
 					case "created":
 						ev, _ := v[0].(jira.IssueCreatedEvent)
 						err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, issuesStr, envStr, v)
+						for _, val := range v {
+							id := fmt.Sprintf("%s-%s", "issue", val.(jira.IssueCreatedEvent).Payload.ID)
+							data = append(data, map[string]interface{}{
+								"id":   id,
+								"data": "",
+							})
+						}
 					case "updated":
 						ev, _ := v[0].(jira.IssueUpdatedEvent)
 						err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, issuesStr, envStr, v)
@@ -596,21 +616,28 @@ func (j *DSJira) OutputDocs(ctx *shared.Ctx, items []interface{}, docs *[]interf
 						break
 					}
 				}
+				err = j.cacheProvider.Create(fmt.Sprintf("%s/%s", j.endpoint, JiraIssue), data)
+				if err != nil {
+					j.log.WithFields(logrus.Fields{"operation": "OutputDocs"}).Errorf("error creating cache for endpoint %s/%s. Error: %+v", j.endpoint, JiraIssue, err)
+				}
 			} else {
 				jsonBytes, err = jsoniter.Marshal(issuesData)
 			}
 		}
 		if err != nil {
-			shared.Printf("Error: %+v\n", err)
+			j.log.WithFields(logrus.Fields{"operation": "OutputDocs"}).Errorf("Error GetModelData: %+v", err)
 			return
 		}
 		if j.Publisher == nil {
-			shared.Printf("publisher: %s\n", string(jsonBytes))
+			j.log.WithFields(logrus.Fields{"operation": "OutputDocs"}).Errorf("publisher: %s", string(jsonBytes))
 		}
 		*docs = []interface{}{}
 		gMaxUpstreamDtMtx.Lock()
 		defer gMaxUpstreamDtMtx.Unlock()
-		shared.SetLastUpdate(ctx, j.URL, gMaxUpstreamDt)
+		err = j.cacheProvider.SetLastSync(j.endpoint, gMaxUpstreamDt)
+		if err != nil {
+			j.log.WithFields(logrus.Fields{"operation": "OutputDocs"}).Infof("unable to set last sync date to cache.error: %v", err)
+		}
 	}
 }
 
@@ -622,13 +649,13 @@ func (j *DSJira) AddLogger(ctx *shared.Ctx) {
 		Username: os.Getenv("ELASTIC_LOG_USER"),
 	})
 	if err != nil {
-		shared.Printf("AddLogger error: %+v", err)
+		j.log.WithFields(logrus.Fields{"operation": "AddLogger"}).Errorf("AddLogger error: %+v", err)
 		return
 	}
 
 	logProvider, err := logger.NewLogger(client, os.Getenv("STAGE"))
 	if err != nil {
-		shared.Printf("AddLogger error: %+v", err)
+		j.log.WithFields(logrus.Fields{"operation": "AddLogger"}).Errorf("NewLogger error: %+v", err)
 		return
 	}
 
@@ -636,9 +663,15 @@ func (j *DSJira) AddLogger(ctx *shared.Ctx) {
 }
 
 // WriteLog - writes to log
-func (j *DSJira) WriteLog(ctx *shared.Ctx, timestamp time.Time, status, message string) {
-	_ = j.Logger.Write(&logger.Log{
+func (j *DSJira) WriteLog(ctx *shared.Ctx, timestamp time.Time, status, message string) error {
+	arn, err := aws.GetContainerARN()
+	if err != nil {
+		j.log.WithFields(logrus.Fields{"operation": "WriteLog"}).Errorf("getContainerMetadata Error : %+v", err)
+		return err
+	}
+	err = j.Logger.Write(&logger.Log{
 		Connector: JiraDataSource,
+		TaskARN:   arn,
 		Configuration: []map[string]string{
 			{
 				"JIRA_URL":     j.URL,
@@ -649,6 +682,7 @@ func (j *DSJira) WriteLog(ctx *shared.Ctx, timestamp time.Time, status, message 
 		CreatedAt: timestamp,
 		Message:   message,
 	})
+	return err
 }
 
 // ParseArgs - parse jira specific environment variables
@@ -767,11 +801,11 @@ func (j *DSJira) Init(ctx *shared.Ctx) (err error) {
 	}
 
 	if ctx.Debug > 1 {
-		shared.Printf("Jira: %+v\nshared context: %s\nModel: %+v", j, ctx.Info())
+		j.log.WithFields(logrus.Fields{"operation": "Init"}).Debugf("Jira: %+v\nshared context: %s\nModel: %+v", j, ctx.Info())
 	}
 
 	if ctx.Debug > 0 {
-		shared.Printf("stream: '%s'\n", j.Stream)
+		j.log.WithFields(logrus.Fields{"operation": "Init"}).Debugf("stream: '%s'", j.Stream)
 	}
 
 	if j.Stream != "" {
@@ -1186,7 +1220,7 @@ func (j *DSJira) GetFields(ctx *shared.Ctx) (customFields map[string]JiraField, 
 // items is a current pack of input items
 // docs is a pointer to where extracted identities will be stored
 func (j *DSJira) JiraEnrichItems(ctx *shared.Ctx, thrN int, items []interface{}, docs *[]interface{}, final bool) (err error) {
-	shared.Printf("input processing(%d/%d/%v)\n", len(items), len(*docs), final)
+	j.log.WithFields(logrus.Fields{"operation": "JiraEnrichItems"}).Infof("input processing(%d/%d/%v)", len(items), len(*docs), final)
 	if final {
 		defer func() {
 			j.OutputDocs(ctx, items, docs, final)
@@ -1195,7 +1229,7 @@ func (j *DSJira) JiraEnrichItems(ctx *shared.Ctx, thrN int, items []interface{},
 
 	// NOTE: non-generic code starts
 	if ctx.Debug > 0 {
-		shared.Printf("jira enrich items %d/%d func\n", len(items), len(*docs))
+		j.log.WithFields(logrus.Fields{"operation": "JiraEnrichItems"}).Debugf("jira enrich items %d/%d func", len(items), len(*docs))
 	}
 	var (
 		mtx *sync.RWMutex
@@ -1329,7 +1363,7 @@ func (j *DSJira) GenSearchFields(ctx *shared.Ctx, issue interface{}, uuid string
 		}
 	}
 	if ctx.Debug > 1 {
-		shared.Printf("returning search fields %+v\n", fields)
+		j.log.WithFields(logrus.Fields{"operation": "GenSearchFields"}).Debugf("returning search fields %+v", fields)
 	}
 	return
 }
@@ -1362,7 +1396,7 @@ func (j *DSJira) AddMetadata(ctx *shared.Ctx, issue interface{}) (mItem map[stri
 	mItem["metadata__timestamp"] = shared.ToESDate(timestamp)
 	// mItem[ProjectSlug] = ctx.ProjectSlug
 	if ctx.Debug > 1 {
-		shared.Printf("%s: %s: %v %v\n", origin, uuid, issueID, updatedOn)
+		j.log.WithFields(logrus.Fields{"operation": "AddMetadata"}).Debugf("%s: %s: %v %v", origin, uuid, issueID, updatedOn)
 	}
 	return
 }
@@ -1457,7 +1491,7 @@ func (j *DSJira) ProcessIssue(ctx *shared.Ctx, allIssues, allDocs *[]interface{}
 			if ctx.Debug > 1 {
 				nComments := len(comments)
 				if nComments > 0 {
-					shared.Printf("processing %d comments\n", len(comments))
+					j.log.WithFields(logrus.Fields{"operation": "ProcessIssue"}).Infof("processing %d comments", len(comments))
 				}
 			}
 			if thrN > 1 {
@@ -1497,12 +1531,12 @@ func (j *DSJira) ProcessIssue(ctx *shared.Ctx, allIssues, allDocs *[]interface{}
 				break
 			}
 			if ctx.Debug > 0 {
-				shared.Printf("processing next comments page from %d/%d\n", startAt, total)
+				j.log.WithFields(logrus.Fields{"operation": "ProcessIssue"}).Debugf("processing next comments page from %d/%d", startAt, total)
 			}
 		}
 
 		if ctx.Debug > 1 {
-			shared.Printf("processed %d comments\n", startAt)
+			j.log.WithFields(logrus.Fields{"operation": "ProcessIssue"}).Debugf("processed %d comments", startAt)
 		}
 
 		return
@@ -1534,7 +1568,7 @@ func (j *DSJira) ProcessIssue(ctx *shared.Ctx, allIssues, allDocs *[]interface{}
 	}
 
 	if ctx.Debug > 1 {
-		shared.Printf("before map custom: %+v\n", shared.DumpPreview(issueFields, 100))
+		j.log.WithFields(logrus.Fields{"operation": "ProcessIssue"}).Debugf("before map custom: %+v", shared.DumpPreview(issueFields, 100))
 	}
 
 	type mapping struct {
@@ -1555,14 +1589,14 @@ func (j *DSJira) ProcessIssue(ctx *shared.Ctx, allIssues, allDocs *[]interface{}
 		for k, v := range m {
 			if ctx.Debug > 1 {
 				prev := issueFields[k]
-				shared.Printf("mapping custom fields %s: %+v -> %+v\n", k, prev, v)
+				j.log.WithFields(logrus.Fields{"operation": "ProcessIssue"}).Infof("mapping custom fields %s: %+v -> %+v", k, prev, v)
 			}
 			issueFields[k] = v
 		}
 	}
 
 	if ctx.Debug > 1 {
-		shared.Printf("after map custom: %+v\n", shared.DumpPreview(issueFields, 100))
+		j.log.WithFields(logrus.Fields{"operation": "ProcessIssue"}).Debugf("after map custom: %+v", shared.DumpPreview(issueFields, 100))
 	}
 
 	// Extra fields
@@ -1586,7 +1620,7 @@ func (j *DSJira) ProcessIssue(ctx *shared.Ctx, allIssues, allDocs *[]interface{}
 	}
 
 	if ctx.Debug > 1 {
-		shared.Printf("after drop: %+v\n", shared.DumpPreview(issueFields, 100))
+		j.log.WithFields(logrus.Fields{"operation": "ProcessIssue"}).Debugf("after drop: %+v", shared.DumpPreview(issueFields, 100))
 	}
 	if ctx.Project != "" {
 		issue.(map[string]interface{})["project"] = ctx.Project
@@ -1611,7 +1645,7 @@ func (j *DSJira) ProcessIssue(ctx *shared.Ctx, allIssues, allDocs *[]interface{}
 			e = j.JiraEnrichItems(ctx, thrN, *allIssues, allDocs, false)
 			// e = SendToQueue(ctx, j, true, UUID, *allIssues)
 			if e != nil {
-				shared.Printf("error %v sending %d issues to queue\n", e, len(*allIssues))
+				j.log.WithFields(logrus.Fields{"operation": "ProcessIssue"}).Errorf("error %v sending %d issues to queue", e, len(*allIssues))
 			}
 			*allIssues = []interface{}{}
 			if allIssuesMtx != nil {
@@ -1662,18 +1696,23 @@ func (j *DSJira) ItemNullableDate(item interface{}, field string) *time.Time {
 func (j *DSJira) Sync(ctx *shared.Ctx) (err error) {
 	thrN := shared.GetThreadsNum(ctx)
 	if ctx.DateFrom != nil {
-		shared.Printf("%s fetching from %v (%d threads)\n", j.Endpoint(ctx), ctx.DateFrom, thrN)
+		j.log.WithFields(logrus.Fields{"operation": "Sync"}).Infof("%s fetching from %v (%d threads)", j.Endpoint(ctx), ctx.DateFrom, thrN)
 	}
 
 	if ctx.DateFrom == nil {
-		ctx.DateFrom = shared.GetLastUpdate(ctx, j.Endpoint(ctx))
+		cachedLastSync, er := j.cacheProvider.GetLastSync(j.endpoint)
+		if er != nil {
+			err = er
+			return
+		}
+		ctx.DateFrom = &cachedLastSync
 		if ctx.DateFrom != nil {
-			shared.Printf("%s resuming from %v (%d threads)\n", j.Endpoint(ctx), ctx.DateFrom, thrN)
+			j.log.WithFields(logrus.Fields{"operation": "Sync"}).Infof("%s resuming from %v (%d threads)", j.Endpoint(ctx), ctx.DateFrom, thrN)
 		}
 	}
 
 	if ctx.DateTo != nil {
-		shared.Printf("%s fetching till %v (%d threads)\n", j.Endpoint(ctx), ctx.DateTo, thrN)
+		j.log.WithFields(logrus.Fields{"operation": "Sync"}).Infof("%s fetching till %v (%d threads)", j.Endpoint(ctx), ctx.DateTo, thrN)
 	}
 
 	// NOTE: Non-generic starts here
@@ -1687,7 +1726,7 @@ func (j *DSJira) Sync(ctx *shared.Ctx) (err error) {
 				c <- e
 			}
 			if ctx.Debug > 0 {
-				shared.Printf("got %d custom fields\n", len(customFields))
+				j.log.WithFields(logrus.Fields{"operation": "Sync"}).Debugf("got %d custom fields", len(customFields))
 			}
 		}()
 		customFields, e = j.GetFields(ctx)
@@ -1702,7 +1741,7 @@ func (j *DSJira) Sync(ctx *shared.Ctx) (err error) {
 	} else {
 		err = getFields(nil)
 		if err != nil {
-			shared.Printf("GetFields error: %+v\n", err)
+			j.log.WithFields(logrus.Fields{"operation": "Sync"}).Errorf("GetFields error: %+v", err)
 			return
 		}
 		fieldsFetched = true
@@ -1764,7 +1803,7 @@ func (j *DSJira) Sync(ctx *shared.Ctx) (err error) {
 		headers = map[string]string{"Content-Type": "application/json"}
 	}
 	if ctx.Debug > 0 {
-		shared.Printf("requesting issues from: %s\n", from)
+		j.log.WithFields(logrus.Fields{"operation": "Sync"}).Debugf("requesting issues from: %s", from)
 	}
 	cacheFor := time.Duration(3) * time.Hour
 	for {
@@ -1791,7 +1830,7 @@ func (j *DSJira) Sync(ctx *shared.Ctx) (err error) {
 		if !fieldsFetched {
 			err = <-chF
 			if err != nil {
-				shared.Printf("GetFields error: %+v\n", err)
+				j.log.WithFields(logrus.Fields{"operation": "Sync"}).Errorf("GetFields error: %+v", err)
 				return
 			}
 			fieldsFetched = true
@@ -1808,14 +1847,14 @@ func (j *DSJira) Sync(ctx *shared.Ctx) (err error) {
 				return
 			}
 			if ctx.Debug > 0 {
-				shared.Printf("processing %d issues\n", len(issues))
+				j.log.WithFields(logrus.Fields{"operation": "Sync"}).Debugf("processing %d issues", len(issues))
 			}
 
 			for _, issue := range issues {
 				var esch chan error
 				esch, e = j.ProcessIssue(ctx, &allIssues, &allDocs, allIssuesMtx, issue, customFields, from, to, thrN)
 				if e != nil {
-					shared.Printf("Error %v processing issue: %+v\n", e, issue)
+					j.log.WithFields(logrus.Fields{"operation": "Sync"}).Errorf("Error %v processing issue: %+v", e, issue)
 					return
 				}
 				if esch != nil {
@@ -1870,7 +1909,7 @@ func (j *DSJira) Sync(ctx *shared.Ctx) (err error) {
 			break
 		}
 		if ctx.Debug > 0 {
-			shared.Printf("processing next issues page from %d/%d\n", startAt, total)
+			j.log.WithFields(logrus.Fields{"operation": "Sync"}).Debugf("processing next issues page from %d/%d", startAt, total)
 		}
 	}
 	for thrN > 1 && nThreads > 0 {
@@ -1897,19 +1936,22 @@ func (j *DSJira) Sync(ctx *shared.Ctx) (err error) {
 	}
 	nIssues := len(allIssues)
 	if ctx.Debug > 0 {
-		shared.Printf("%d remaining issues to send to queue\n", nIssues)
+		j.log.WithFields(logrus.Fields{"operation": "Sync"}).Debugf("%d remaining issues to send to queue", nIssues)
 	}
 	// NOTE: for all items, even if 0 - to flush the queue
 	err = j.JiraEnrichItems(ctx, thrN, allIssues, &allDocs, true)
 	//err = SendToQueue(ctx, j, true, UUID, allIssues)
 	if err != nil {
-		shared.Printf("Error %v sending %d issues to queue\n", err, len(allIssues))
+		j.log.WithFields(logrus.Fields{"operation": "Sync"}).Errorf("Error %v sending %d issues to queue", err, len(allIssues))
 	}
-	shared.Printf("processed %d issues\n", startAt)
+	j.log.WithFields(logrus.Fields{"operation": "Sync"}).Infof("processed %d issues", startAt)
 	// NOTE: Non-generic ends here
 	gMaxUpstreamDtMtx.Lock()
 	defer gMaxUpstreamDtMtx.Unlock()
-	shared.SetLastUpdate(ctx, j.Endpoint(ctx), gMaxUpstreamDt)
+	err = j.cacheProvider.SetLastSync(j.endpoint, gMaxUpstreamDt)
+	if err != nil {
+		j.log.WithFields(logrus.Fields{"operation": "Sync"}).Infof("unable to set last sync date to cache.error: %v", err)
+	}
 	return
 }
 
@@ -1918,10 +1960,10 @@ func main() {
 		ctx  shared.Ctx
 		jira DSJira
 	)
-
+	jira.createStructuredLogger()
 	err := jira.Init(&ctx)
 	if err != nil {
-		shared.Printf("Error: %+v\n", err)
+		jira.log.WithFields(logrus.Fields{"operation": "main"}).Errorf("Error Init jira: %+v", err)
 		return
 	}
 	// Update status to in progress in log clusterx
@@ -1929,15 +1971,80 @@ func main() {
 	shared.SetSyncMode(true, false)
 	shared.SetLogLoggerError(false)
 	shared.AddLogger(&jira.Logger, JiraDataSource, logger.Internal, []map[string]string{{"JIRA_URL": jira.URL, "JIRA_PROJECT": ctx.Project, "ProjectSlug": ctx.Project}})
-	jira.WriteLog(&ctx, timestamp, logger.InProgress, "")
-	err = jira.Sync(&ctx)
+	jira.AddCacheProvider()
+	projects, err := jira.getProjects()
 	if err != nil {
-		shared.Printf("Error: %+v\n", err)
-		// Update status to failed in log cluster
-		jira.WriteLog(&ctx, timestamp, logger.Failed, "")
 		return
 	}
+	for _, p := range projects {
+		err = jira.WriteLog(&ctx, timestamp, logger.InProgress, "")
+		if err != nil {
+			jira.log.WithFields(logrus.Fields{"operation": "main"}).Errorf("WriteLog Error : %+v", err)
+			return
+		}
+		ctx.Project = p.ID
+		ctx.ProjectFilter = true
+		jira.endpoint = strings.ReplaceAll(strings.TrimPrefix(strings.TrimPrefix(jira.URL, "https://"), "http://"), "/", "-") + "/" + p.Key
+		err = jira.Sync(&ctx)
+		if err != nil {
+			jira.log.WithFields(logrus.Fields{"operation": "main"}).Errorf("Error Sync jira: %+v", err)
+			// Update status to failed in log cluster
+			er := jira.WriteLog(&ctx, timestamp, logger.Failed, err.Error())
+			if er != nil {
+				err = er
+			}
+		}
+		// Update status to done in log cluster
+		err = jira.WriteLog(&ctx, timestamp, logger.Done, "")
+	}
 
-	// Update status to done in log cluster
-	jira.WriteLog(&ctx, timestamp, logger.Done, "")
+}
+
+// createStructuredLogger...
+func (j *DSJira) createStructuredLogger() {
+	logrus.SetFormatter(&logrus.JSONFormatter{})
+	log := logrus.WithFields(
+		logrus.Fields{
+			"environment": os.Getenv("STAGE"),
+			"commit":      build.GitCommit,
+			"version":     build.Version,
+			"service":     build.AppName,
+			"endpoint":    j.URL,
+		})
+	j.log = log
+}
+
+// AddCacheProvider - adds cache provider
+func (j *DSJira) AddCacheProvider() {
+	cacheProvider := cache.NewManager(JiraDataSource, os.Getenv("STAGE"))
+	j.cacheProvider = *cacheProvider
+}
+
+func (j *DSJira) getProjects() ([]project, error) {
+	httpClient := http.NewClientProvider(time.Second*60, false)
+	url := j.URL + JiraAPIRoot + "/project"
+	var headers map[string]string
+	if j.Token != "" {
+		headers = map[string]string{"Authorization": "Basic " + j.Token}
+	}
+
+	statusCode, res, err := httpClient.Request(url, "GET", headers, nil, nil)
+	if err != nil {
+		return []project{}, err
+	}
+	if statusCode > 201 {
+		return []project{}, fmt.Errorf("error getting projects, status code: %d", statusCode)
+	}
+
+	var projectsRes []project
+	err = json.Unmarshal(res, &projectsRes)
+	if err != nil {
+		return projectsRes, err
+	}
+	return projectsRes, nil
+}
+
+type project struct {
+	ID  string `json:"id"`
+	Key string `json:"key"`
 }
