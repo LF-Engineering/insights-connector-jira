@@ -1966,6 +1966,7 @@ func main() {
 		jira.log.WithFields(logrus.Fields{"operation": "main"}).Errorf("Error Init jira: %+v", err)
 		return
 	}
+	jira.log = jira.log.WithFields(logrus.Fields{"endpoint": jira.URL})
 	// Update status to in progress in log clusterx
 	timestamp := time.Now()
 	shared.SetSyncMode(true, false)

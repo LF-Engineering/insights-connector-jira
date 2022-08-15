@@ -12,8 +12,8 @@ GO_ERRCHECK=errcheck -asserts -ignore '[FS]?[Pp]rint*'
 BINARIES=jira
 COMMIT=`git rev-parse --short HEAD`
 VERSION=`git describe --tags --always | cut -d- -f1`
-LDFLAGS=-ldflags "-s -w -extldflags '-static' -X github.com/LF-Engineering/insights-datasource-jira/build.GitCommit=$(COMMIT) \
-  -X github.com/LF-Engineering/insights-datasource-jira/build.Version=$(VERSION)"
+LDFLAGS=-ldflags "-s -w -extldflags '-static' -X github.com/LF-Engineering/insights-connector-jira/build.GitCommit=$(COMMIT) \
+  -X github.com/LF-Engineering/insights-connector-jira/build.Version=$(VERSION)"
 all: check ${BINARIES}
 jira: ${GO_BIN_FILES}
 	 ${GO_ENV} ${GO_BUILD} -o jira ${LDFLAGS} ${GO_BIN_FILES}
