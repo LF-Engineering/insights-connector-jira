@@ -299,7 +299,8 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 	source := JiraDataSource
 	for _, iDoc := range docs {
 		var (
-			labels []string
+			labels     []string
+			components []string
 		)
 		nComments := 0
 		doc, _ := iDoc.(map[string]interface{})
@@ -323,6 +324,15 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 				label, _ := iLabel.(string)
 				if label != "" {
 					labels = append(labels, label)
+				}
+			}
+		}
+		iComponents, okComponents := doc["components"].([]interface{})
+		if okComponents {
+			for _, iCom := range iComponents {
+				com, _ := iCom.(string)
+				if com != "" {
+					components = append(components, com)
 				}
 			}
 		}
@@ -517,6 +527,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 			Project:      project,
 			Labels:       labels,
 			Watchers:     watchers,
+			Components:   components,
 			Contributors: shared.DedupContributors(issueContributors),
 			Issue: insights.Issue{
 				Title:           title,
@@ -1116,6 +1127,20 @@ func (j *DSJira) EnrichItem(ctx *shared.Ctx, item map[string]interface{}, roles 
 			}
 		}
 		rich["releases"] = rels
+	}
+	components, ok := shared.Dig(fields, []string{"components"}, false, true)
+	if ok {
+		coms := []interface{}{}
+		cs, ok := components.([]interface{})
+		if ok {
+			for _, com := range cs {
+				name, ok := shared.Dig(com, []string{"name"}, false, true)
+				if ok {
+					coms = append(coms, name)
+				}
+			}
+		}
+		rich["components"] = coms
 	}
 	for field, fieldValue := range fields {
 		if !strings.HasPrefix(strings.ToLower(field), "customfield_") {
@@ -1941,6 +1966,7 @@ func main() {
 		jira.log.WithFields(logrus.Fields{"operation": "main"}).Errorf("Error Init jira: %+v", err)
 		return
 	}
+	jira.log = jira.log.WithFields(logrus.Fields{"endpoint": jira.URL})
 	// Update status to in progress in log clusterx
 	timestamp := time.Now()
 	shared.SetSyncMode(true, false)
