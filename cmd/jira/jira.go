@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/LF-Engineering/insights-datasource-shared/aws"
 	"os"
 	"strconv"
 	"strings"
@@ -14,7 +15,6 @@ import (
 	neturl "net/url"
 
 	"github.com/LF-Engineering/insights-connector-jira/build"
-	"github.com/LF-Engineering/insights-datasource-shared/aws"
 	"github.com/LF-Engineering/insights-datasource-shared/cache"
 	"github.com/LF-Engineering/insights-datasource-shared/cryptography"
 	"github.com/LF-Engineering/insights-datasource-shared/http"
@@ -1993,13 +1993,20 @@ func main() {
 			// Update status to failed in log cluster
 			er := jira.WriteLog(&ctx, timestamp, logger.Failed, err.Error())
 			if er != nil {
+				jira.log.WithFields(logrus.Fields{"operation": "main"}).Errorf("WriteLog Error : %+v", err)
+				shared.FatalOnError(er)
 				err = er
 			}
+			shared.FatalOnError(err)
 			return
 		}
 	}
 	// Update status to done in log cluster
 	err = jira.WriteLog(&ctx, timestamp, logger.Done, "")
+	if err != nil {
+		jira.log.WithFields(logrus.Fields{"operation": "main"}).Errorf("WriteLog Error : %+v", err)
+	}
+	shared.FatalOnError(err)
 }
 
 // createStructuredLogger...
