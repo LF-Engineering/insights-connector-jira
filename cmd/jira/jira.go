@@ -1977,15 +1977,16 @@ func main() {
 	if err != nil {
 		return
 	}
+	err = jira.WriteLog(&ctx, timestamp, logger.InProgress, "jira connector started")
+	if err != nil {
+		jira.log.WithFields(logrus.Fields{"operation": "main"}).Errorf("WriteLog Error : %+v", err)
+		return
+	}
 	for _, p := range projects {
-		err = jira.WriteLog(&ctx, timestamp, logger.InProgress, "")
-		if err != nil {
-			jira.log.WithFields(logrus.Fields{"operation": "main"}).Errorf("WriteLog Error : %+v", err)
-			return
-		}
 		ctx.Project = p.ID
 		ctx.ProjectFilter = true
 		jira.endpoint = strings.ReplaceAll(strings.TrimPrefix(strings.TrimPrefix(jira.URL, "https://"), "http://"), "/", "-") + "/" + p.Key
+		jira.log = jira.log.WithFields(logrus.Fields{"project": p.Key})
 		err = jira.Sync(&ctx)
 		if err != nil {
 			jira.log.WithFields(logrus.Fields{"operation": "main"}).Errorf("Error Sync jira: %+v", err)
@@ -1994,11 +1995,11 @@ func main() {
 			if er != nil {
 				err = er
 			}
+			return
 		}
-		// Update status to done in log cluster
-		err = jira.WriteLog(&ctx, timestamp, logger.Done, "")
 	}
-
+	// Update status to done in log cluster
+	err = jira.WriteLog(&ctx, timestamp, logger.Done, "")
 }
 
 // createStructuredLogger...
