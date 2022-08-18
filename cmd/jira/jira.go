@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/LF-Engineering/insights-datasource-shared/aws"
 	"os"
 	"strconv"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	neturl "net/url"
 
 	"github.com/LF-Engineering/insights-connector-jira/build"
+	"github.com/LF-Engineering/insights-datasource-shared/aws"
 	"github.com/LF-Engineering/insights-datasource-shared/cache"
 	"github.com/LF-Engineering/insights-datasource-shared/cryptography"
 	"github.com/LF-Engineering/insights-datasource-shared/http"
@@ -397,6 +397,23 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 			}
 		}
 		// Comments start
+		uComments := make(map[string]jira.IssueComment)
+		commentsCacheID := fmt.Sprintf("%s-%s-comments", JiraIssue, issueID)
+		commentsFileData, er := j.cacheProvider.GetFileByKey(fmt.Sprintf("%s/%s", j.endpoint, JiraIssue), commentsCacheID)
+		if er != nil {
+			err = er
+			j.log.WithFields(logrus.Fields{"operation": "GetModelData"}).Errorf("GetFileByKey get cached comments error: %v", err)
+			return data, err
+		}
+		oldComments := IssueComments{}
+		if commentsFileData != nil {
+			er = json.Unmarshal(commentsFileData, &oldComments)
+			if er != nil {
+				err = er
+				j.log.WithFields(logrus.Fields{"operation": "GetModelData"}).Errorf("unmarshall old cached comments error: %v", err)
+				return data, err
+			}
+		}
 		comments, okComments := doc["issue_comments"].([]map[string]interface{})
 		if okComments {
 			for _, comment := range comments {
@@ -510,7 +527,93 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 						ary = append(ary, issueComment)
 					}
 					data[key] = ary
+					found := false
+					for _, oldc := range oldComments.Comments {
+						if oldc.ID == issueCommentID {
+							found = true
+							break
+						}
+					}
+					if !found {
+						key := "comment_added"
+						ary, ok := data[key]
+						if !ok {
+							ary = []interface{}{issueComment}
+						} else {
+							ary = append(ary, issueComment)
+						}
+						data[key] = ary
+					}
+					uComments[issueCommentID] = issueComment
 				}
+			}
+		}
+		for _, comm := range oldComments.Comments {
+			deleted := true
+			edited := false
+			for newCommID, commentVal := range uComments {
+				if newCommID == comm.ID {
+					deleted = false
+					if commentVal.Body != comm.Body {
+						edited = true
+					}
+					break
+				}
+			}
+			if deleted {
+				rvComm := jira.DeleteIssueComment{
+					ID:      comm.ID,
+					IssueID: issueID,
+				}
+				key := "comment_deleted"
+				ary, ok := data[key]
+				if !ok {
+					ary = []interface{}{rvComm}
+				} else {
+					ary = append(ary, rvComm)
+				}
+				data[key] = ary
+			}
+			if edited {
+				editedComment := jira.IssueComment{
+					ID:      comm.ID,
+					IssueID: issueID,
+					Comment: insights.Comment{
+						Body:            uComments[comm.ID].Body,
+						CommentURL:      uComments[comm.ID].CommentURL,
+						CommentID:       uComments[comm.ID].CommentID,
+						Contributor:     uComments[comm.ID].Contributor,
+						SyncTimestamp:   time.Now(),
+						SourceTimestamp: uComments[comm.ID].SourceTimestamp,
+					},
+				}
+				key := "comment_edited"
+				ary, ok := data[key]
+				if !ok {
+					ary = []interface{}{editedComment}
+				} else {
+					ary = append(ary, editedComment)
+				}
+				data[key] = ary
+			}
+		}
+		if len(comments) > 0 {
+			var updatedComments IssueComments
+			for _, comm := range uComments {
+				updatedComments.Comments = append(updatedComments.Comments, IssueComment{
+					ID:   comm.ID,
+					Body: comm.Body,
+				})
+			}
+			b, er := json.Marshal(updatedComments)
+			if er != nil {
+				err = er
+				j.log.WithFields(logrus.Fields{"operation": "GetModelData"}).Errorf("error marshal updated issue comments cache. comments data: %+v, error: %v", updatedComments, err)
+				return data, err
+			}
+			if err = j.cacheProvider.UpdateFileByKey(fmt.Sprintf("%s/%s", j.endpoint, JiraIssue), commentsCacheID, b); err != nil {
+				j.log.WithFields(logrus.Fields{"operation": "GetModelData"}).Errorf("UpdateFileByKey error update issue comments cache. path: %s, cache id: %s, comments data: %v, error: %v", fmt.Sprintf("%s/%s/", j.endpoint, JiraIssue), commentsCacheID, b, err)
+				return data, err
 			}
 		}
 		sourceTimestamp := createdOn
@@ -1458,9 +1561,9 @@ func (j *DSJira) ProcessIssue(ctx *shared.Ctx, allIssues, allDocs *[]interface{}
 			url := urlRoot
 			if encodeInQuery {
 				// ?startAt=0&maxResults=100&jql=updated+%3E+0+order+by+updated+asc
-				url += fmt.Sprintf(`?startAt=%d&maxResults=%d&jql=`, startAt, maxResults) + neturl.QueryEscape(jql)
+				url += fmt.Sprintf(`?maxResults=%d&jql=`, maxResults) + neturl.QueryEscape(jql)
 			} else {
-				payloadBytes = []byte(fmt.Sprintf(`{"startAt":%d,"maxResults":%d,"jql":"%s"}`, startAt, maxResults, jql))
+				payloadBytes = []byte(fmt.Sprintf(`{"maxResults":%d,"jql":"%s"}`, maxResults, jql))
 			}
 			var res interface{}
 			res, _, _, _, e = shared.Request(
@@ -1995,11 +2098,9 @@ func main() {
 			if er != nil {
 				jira.log.WithFields(logrus.Fields{"operation": "main"}).Errorf("WriteLog Error : %+v", err)
 				shared.FatalOnError(er)
-				err = er
 			}
-			shared.FatalOnError(err)
-			return
 		}
+		shared.FatalOnError(err)
 	}
 	// Update status to done in log cluster
 	err = jira.WriteLog(&ctx, timestamp, logger.Done, "")
@@ -2056,4 +2157,15 @@ func (j *DSJira) getProjects() ([]project, error) {
 type project struct {
 	ID  string `json:"id"`
 	Key string `json:"key"`
+}
+
+// IssueComments ...
+type IssueComments struct {
+	Comments []IssueComment
+}
+
+// IssueComment ...
+type IssueComment struct {
+	ID   string `json:"id"`
+	Body string `json:"body"`
 }
