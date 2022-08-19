@@ -95,7 +95,7 @@ workflows:
             - build
           filters:
             branches:
-              only: enhance-log #main
+              only: main
             tags:
               ignore: /.*/
       - approve_test:
