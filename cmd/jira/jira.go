@@ -71,7 +71,8 @@ const (
 	// Failed status
 	Failed = "failed"
 	// Success status
-	Success   = "success"
+	Success = "success"
+	// JiraIssue type
 	JiraIssue = "issue"
 )
 
@@ -904,7 +905,7 @@ func (j *DSJira) Init(ctx *shared.Ctx) (err error) {
 	}
 
 	if ctx.Debug > 1 {
-		j.log.WithFields(logrus.Fields{"operation": "Init"}).Debugf("Jira: %+v\nshared context: %s\nModel: %+v", j, ctx.Info())
+		j.log.WithFields(logrus.Fields{"operation": "Init"}).Debugf("Jira: %+v\nshared context: %s", j, ctx.Info())
 	}
 
 	if ctx.Debug > 0 {
