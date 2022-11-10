@@ -381,6 +381,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 					j.log.WithFields(logrus.Fields{"operation": "GetModelData"}).Errorf("GenerateIdentity(%s,%s,%s,%s): %+v for %+v", source, email, name, username, err, doc)
 					return nil, err
 				}
+				isBotIdentity := shared.IsBotIdentity(name, username, email, JiraDataSource, os.Getenv("BOT_NAME_REGEX"), os.Getenv("BOT_USERNAME_REGEX"), os.Getenv("BOT_EMAIL_REGEX"))
 				contributor := insights.Contributor{
 					Role:   roleValue,
 					Weight: 1.0,
@@ -392,6 +393,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 						Name:       name,
 						Username:   username,
 						Source:     source,
+						IsBot:      isBotIdentity,
 					},
 				}
 				issueContributors = append(issueContributors, contributor)
@@ -468,6 +470,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 						updatedOn = updateDt
 					}
 					// fmt.Printf("(%+v,%+v)\n", commentCreatedOn, updatedOn)
+					isBotIdentity := shared.IsBotIdentity(name, username, email, JiraDataSource, os.Getenv("BOT_NAME_REGEX"), os.Getenv("BOT_USERNAME_REGEX"), os.Getenv("BOT_EMAIL_REGEX"))
 					contributor := insights.Contributor{
 						Role:   roleValue,
 						Weight: 1.0,
@@ -479,6 +482,7 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 							Name:       name,
 							Username:   username,
 							Source:     source,
+							IsBot:      isBotIdentity,
 						},
 					}
 					issueContributors = append(issueContributors, contributor)
@@ -2052,9 +2056,11 @@ func (j *DSJira) Sync(ctx *shared.Ctx) (err error) {
 	// NOTE: Non-generic ends here
 	gMaxUpstreamDtMtx.Lock()
 	defer gMaxUpstreamDtMtx.Unlock()
-	err = j.cacheProvider.SetLastSync(j.endpoint, gMaxUpstreamDt)
-	if err != nil {
-		j.log.WithFields(logrus.Fields{"operation": "Sync"}).Infof("unable to set last sync date to cache.error: %v", err)
+	if !gMaxUpstreamDt.IsZero() {
+		err = j.cacheProvider.SetLastSync(j.endpoint, gMaxUpstreamDt)
+		if err != nil {
+			j.log.WithFields(logrus.Fields{"operation": "Sync"}).Infof("unable to set last sync date to cache.error: %v", err)
+		}
 	}
 	return
 }
