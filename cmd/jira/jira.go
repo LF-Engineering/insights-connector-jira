@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
@@ -31,6 +32,7 @@ import (
 	elastic "github.com/LF-Engineering/insights-datasource-shared/elastic"
 	logger "github.com/LF-Engineering/insights-datasource-shared/ingestjob"
 	jsoniter "github.com/json-iterator/go"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 const (
@@ -2086,6 +2088,25 @@ func main() {
 	projects, err := jira.getProjects()
 	if err != nil {
 		return
+	}
+	if os.Getenv("SPAN") != "" {
+		tracer.Start(tracer.WithGlobalTag("connector", "jira"))
+		defer tracer.Stop()
+
+		sb := os.Getenv("SPAN")
+		carrier := make(tracer.TextMapCarrier)
+		err = jsoniter.Unmarshal([]byte(sb), &carrier)
+		if err != nil {
+			return
+		}
+		sctx, er := tracer.Extract(carrier)
+		if er != nil {
+			fmt.Println(er)
+		}
+		if err == nil && sctx != nil {
+			span, _ := tracer.StartSpanFromContext(context.Background(), "issue", tracer.ResourceName("connector"), tracer.ChildOf(sctx))
+			defer span.Finish()
+		}
 	}
 	err = jira.WriteLog(&ctx, timestamp, logger.InProgress, "jira connector started")
 	if err != nil {
