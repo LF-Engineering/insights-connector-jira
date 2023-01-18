@@ -78,7 +78,8 @@ const (
 	// Success status
 	Success = "success"
 	// JiraIssue type
-	JiraIssue         = "issue"
+	JiraIssue = "issue"
+	// IssuesCacheFile name
 	IssuesCacheFile   = "issues-cache.csv"
 	commentsCacheFile = "comments-cache"
 )
