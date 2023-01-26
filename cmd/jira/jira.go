@@ -618,14 +618,13 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 			Components:   components,
 			Contributors: shared.DedupContributors(issueContributors),
 			Issue: insights.Issue{
-				Title:           title,
-				Body:            sIssueBody,
-				IssueID:         sIID,
-				IssueURL:        url,
-				State:           insights.IssueState(state),
-				SyncTimestamp:   time.Now(),
-				SourceTimestamp: sourceTimestamp,
-				Orphaned:        false,
+				Title:         title,
+				Body:          sIssueBody,
+				IssueID:       sIID,
+				IssueURL:      url,
+				State:         insights.IssueState(state),
+				SyncTimestamp: time.Now(),
+				Orphaned:      false,
 			},
 		}
 		isCreated := isKeyCreated(issueID)
