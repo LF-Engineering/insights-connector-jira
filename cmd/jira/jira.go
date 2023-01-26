@@ -605,10 +605,6 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 			})
 		}
 		cachedComments[issueID] = updatedComments
-		sourceTimestamp := createdOn
-		if updatedOn.After(createdOn) {
-			sourceTimestamp = updatedOn
-		}
 		// Comments end
 		// Final Issue object
 		issue := jira.Issue{
@@ -638,7 +634,9 @@ func (j *DSJira) GetModelData(ctx *shared.Ctx, docs []interface{}) (map[string][
 			return data, err
 		}
 		key := "updated"
+		issue.SourceTimestamp = updatedOn
 		if !isCreated {
+			issue.SourceTimestamp = createdOn
 			key = "created"
 		}
 		// shared.Printf("%s (%s,%s) final (createdOn, updatedOn, nComments, key): (%+v, %+v, %d, %s)\n", sIID, issueID, issueKey, createdOn, updatedOn, nComments, key)
