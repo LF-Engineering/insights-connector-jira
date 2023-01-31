@@ -87,7 +87,7 @@ workflows:
             - build
           filters:
             branches:
-              only: clean-up-caching #main
+              only: main
             tags:
               ignore: /.*/
       - approve_prod:
