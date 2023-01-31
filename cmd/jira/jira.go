@@ -672,7 +672,6 @@ func (j *DSJira) OutputDocs(ctx *shared.Ctx, items []interface{}, docs *[]interf
 				insightsStr := "insights"
 				issuesStr := "issues"
 				envStr := os.Getenv("STAGE")
-				data := make([]map[string]interface{}, 0)
 				for k, v := range issuesData {
 					switch k {
 					case "created":
@@ -726,10 +725,6 @@ func (j *DSJira) OutputDocs(ctx *shared.Ctx, items []interface{}, docs *[]interf
 				}
 				if err = j.cacheProvider.UpdateFileByKey(j.endpoint, commentsCacheFile, comB); err != nil {
 					return
-				}
-				err = j.cacheProvider.Create(fmt.Sprintf("%s/%s", j.endpoint, JiraIssue), data)
-				if err != nil {
-					j.log.WithFields(logrus.Fields{"operation": "OutputDocs"}).Errorf("error creating cache for endpoint %s/%s. Error: %+v", j.endpoint, JiraIssue, err)
 				}
 			} else {
 				jsonBytes, err = jsoniter.Marshal(issuesData)
@@ -1821,6 +1816,7 @@ func (j *DSJira) Sync(ctx *shared.Ctx) (err error) {
 			j.log.WithFields(logrus.Fields{"operation": "Sync"}).Infof("%s resuming from %v (%d threads)", j.Endpoint(ctx), ctx.DateFrom, thrN)
 		}
 	}
+	cachedIssues = make(map[string]EntityCache)
 	j.getCachedIssues()
 	if err = j.getCachedComments(); err != nil {
 		return
