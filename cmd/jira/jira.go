@@ -114,7 +114,7 @@ var (
 
 // Publisher - for streaming data to Kinesis
 type Publisher interface {
-	PushEvents(action, source, eventType, subEventType, env string, data []interface{}) (string, error)
+	PushEvents(action, source, eventType, subEventType, env string, data []interface{}, endpoint string) (string, error)
 }
 
 // DSJira - DS implementation for Jira
@@ -667,6 +667,7 @@ func (j *DSJira) OutputDocs(ctx *shared.Ctx, items []interface{}, docs *[]interf
 		)
 
 		issuesData, err = j.GetModelData(ctx, *docs)
+		endpoint := strings.ReplaceAll(j.endpoint, "/", "-")
 		if err == nil {
 			if j.Publisher != nil {
 				insightsStr := "insights"
@@ -676,7 +677,7 @@ func (j *DSJira) OutputDocs(ctx *shared.Ctx, items []interface{}, docs *[]interf
 					switch k {
 					case "created":
 						ev, _ := v[0].(jira.IssueCreatedEvent)
-						path, err := j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, issuesStr, envStr, v)
+						path, err := j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, issuesStr, envStr, v, endpoint)
 						for _, val := range v {
 							payload := val.(jira.IssueCreatedEvent).Payload
 							b, er := json.Marshal(val.(jira.IssueCreatedEvent))
@@ -697,16 +698,16 @@ func (j *DSJira) OutputDocs(ctx *shared.Ctx, items []interface{}, docs *[]interf
 						}
 					case "updated":
 						ev, _ := v[0].(jira.IssueUpdatedEvent)
-						_, err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, issuesStr, envStr, v)
+						_, err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, issuesStr, envStr, v, endpoint)
 					case "comment_added":
 						ev, _ := v[0].(jira.IssueCommentAddedEvent)
-						_, err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, issuesStr, envStr, v)
+						_, err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, issuesStr, envStr, v, endpoint)
 					case "comment_edited":
 						ev, _ := v[0].(jira.IssueCommentEditedEvent)
-						_, err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, issuesStr, envStr, v)
+						_, err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, issuesStr, envStr, v, endpoint)
 					case "comment_deleted":
 						ev, _ := v[0].(jira.IssueCommentDeletedEvent)
-						_, err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, issuesStr, envStr, v)
+						_, err = j.Publisher.PushEvents(ev.Event(), insightsStr, JiraDataSource, issuesStr, envStr, v, endpoint)
 					default:
 						err = fmt.Errorf("unknown jira issue event type '%s'", k)
 					}
